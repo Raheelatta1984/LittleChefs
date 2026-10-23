@@ -1,6 +1,7 @@
 import type { RecipeView } from "../../shared/types";
 import { playPop } from "../utils/audio";
 import { emojiFor } from "../lib/adapters";
+import { YouTubePlayer, extractYouTubeId } from "./YouTubePlayer";
 
 export function DbRecipeDetail({
   recipe,
@@ -8,13 +9,16 @@ export function DbRecipeDetail({
   onStartPrep,
   onDelete,
   deleting,
+  onOpenSource,
 }: {
   recipe: RecipeView;
   onBack: () => void;
   onStartPrep: () => void;
   onDelete: () => void;
   deleting: boolean;
+  onOpenSource?: (url: string) => void;
 }) {
+  const videoId = recipe.sourceVideoId ?? extractYouTubeId(recipe.sourceUrl);
   return (
     <main className="flex flex-1 flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -30,7 +34,9 @@ export function DbRecipeDetail({
         </span>
       </div>
 
-      {recipe.heroImageUrl ? (
+      {videoId ? (
+        <YouTubePlayer youtubeIdOrUrl={videoId} title={recipe.title} />
+      ) : recipe.heroImageUrl ? (
         <img
           src={recipe.heroImageUrl}
           alt={recipe.title}
@@ -46,14 +52,17 @@ export function DbRecipeDetail({
       <div className="text-center">
         <h2 className="text-3xl font-black text-slate-800">{emojiFor(recipe.title)} {recipe.title}</h2>
         {recipe.sourceUrl && (
-          <a
-            href={recipe.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 inline-block text-sm font-bold text-sky-600 underline decoration-dotted"
+          <button
+            type="button"
+            onClick={() => {
+              playPop();
+              onOpenSource?.(recipe.sourceUrl!);
+            }}
+            className="mt-1 inline-flex items-center gap-1 rounded-full bg-sky-50 px-3 py-1 text-xs font-extrabold text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-100 active:scale-95"
           >
-            {recipe.sourceType === "youtube" ? "📺" : "🌐"} {recipe.sourceChannel ?? recipe.sourceAuthor ?? "Recipe source"}
-          </a>
+            {recipe.sourceType === "youtube" ? "📺" : "🌐"}{" "}
+            {recipe.sourceChannel ?? recipe.sourceAuthor ?? "Open source inside app"}
+          </button>
         )}
         <div className="mt-3 flex flex-wrap justify-center gap-2 text-sm font-extrabold">
           {recipe.totalMinutes ? (

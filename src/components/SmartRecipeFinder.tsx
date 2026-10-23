@@ -13,6 +13,7 @@ import {
   type FamousChef,
 } from "../data/famousChefs";
 import { YouTubePlayer } from "./YouTubePlayer";
+import type { BrowserChefContext } from "./InAppBrowser";
 import { playDing, playPop } from "../utils/audio";
 
 export type FoundRecipe = Recipe & {
@@ -174,6 +175,13 @@ function buildRecipeFromMeal(meal: MealDbMeal, item: Top10Item): FoundRecipe {
   };
 }
 
+export type OpenBrowserRequest = {
+  url?: string;
+  query?: string;
+  tab?: "website" | "youtube";
+  chef?: BrowserChefContext | null;
+};
+
 type SmartRecipeFinderProps = {
   initialQuery: string;
   /** Open straight into AI Top-Chef mode (e.g. "Not this" on the recipe page). */
@@ -184,6 +192,7 @@ type SmartRecipeFinderProps = {
   rejectedMealId?: string;
   onClose: () => void;
   onRecipeFound: (recipe: FoundRecipe) => void;
+  onOpenBrowser?: (request: OpenBrowserRequest) => void;
 };
 
 // THE ONLY search in the app.
@@ -191,7 +200,7 @@ type SmartRecipeFinderProps = {
 // NOT-THIS RULE: "❌ Not This" never dead-ends. It opens AI Top-Chef mode —
 // famous chefs/YouTubers for the dish's region & country (Food Fusion 🇵🇰,
 // Ranveer Brar 🇮🇳, …) plus fresh online recipes, minus everything rejected.
-export function SmartRecipeFinder({ initialQuery, initialMode, rejectedRecipeName, rejectedMealId, onClose, onRecipeFound }: SmartRecipeFinderProps) {
+export function SmartRecipeFinder({ initialQuery, initialMode, rejectedRecipeName, rejectedMealId, onClose, onRecipeFound, onOpenBrowser }: SmartRecipeFinderProps) {
   const initialParsed = parseDishQuery(initialQuery);
   const startInAi = initialMode === "aiChefs" && Boolean(initialParsed);
 
@@ -650,6 +659,45 @@ export function SmartRecipeFinder({ initialQuery, initialMode, rejectedRecipeNam
             >
               Find My Recipe 🔍
             </button>
+            {onOpenBrowser && (
+              <div className="space-y-2 rounded-2xl bg-sky-50 p-3 ring-1 ring-sky-100">
+                <p className="text-center text-xs font-extrabold text-sky-800">
+                  {isUrlLike(query)
+                    ? "🔗 Link detected! Load this website or YouTube video right inside the app:"
+                    : "🌐📺 Want to browse a chef's website or YouTube channel inside the app?"}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playPop();
+                      onOpenBrowser({
+                        url: isUrlLike(query) ? query.trim() : undefined,
+                        query: parseDishQuery(query) || query.trim(),
+                        tab: "website",
+                      });
+                    }}
+                    className="rounded-xl bg-white py-2 text-xs font-black text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-100 active:scale-95"
+                  >
+                    🌐 Browse Websites
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playPop();
+                      onOpenBrowser({
+                        url: isUrlLike(query) ? query.trim() : undefined,
+                        query: parseDishQuery(query) || query.trim(),
+                        tab: "youtube",
+                      });
+                    }}
+                    className="rounded-xl bg-white py-2 text-xs font-black text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 active:scale-95"
+                  >
+                    📺 Browse YouTube
+                  </button>
+                </div>
+              </div>
+            )}
             <p className="text-center text-xs font-bold text-slate-400">💾 {savedCount} custom recipe{savedCount === 1 ? "" : "s"} saved</p>
           </div>
         )}
@@ -753,8 +801,7 @@ export function SmartRecipeFinder({ initialQuery, initialMode, rejectedRecipeNam
             <section aria-label="Famous top chefs for this dish">
               <h4 className="font-black text-slate-800">⭐ Famous Top Chefs — choose one!</h4>
               <p className="mb-3 mt-0.5 text-xs font-bold text-slate-400">
-                “Cook in the App” makes an in-app version inspired by that chef&apos;s style. For their exact original
-                recipe, use their official website / YouTube search — with a grown-up! 🧑‍🤝‍🧑
+                “Cook in the App” makes an in-app version inspired by that chef&apos;s style. Or browse their website / YouTube channel right inside the app and import the complete recipe with AI Onboarding! 🤖
               </p>
               {visibleChefs.length === 0 ? (
                 <p className="py-3 text-center text-sm font-bold text-slate-500">No famous chefs listed for this region yet — try 🌍 All Top Chefs!</p>
@@ -790,23 +837,49 @@ export function SmartRecipeFinder({ initialQuery, initialMode, rejectedRecipeNam
                         </button>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {websiteUrl && (
-                            <a
-                              href={websiteUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-sky-700 ring-1 ring-sky-200 transition active:scale-95"
+                            <button
+                              type="button"
+                              onClick={() => {
+                                playPop();
+                                onOpenBrowser?.({
+                                  url: websiteUrl,
+                                  query: dishForChefs,
+                                  tab: "website",
+                                  chef: {
+                                    name: chef.name,
+                                    emoji: chef.emoji,
+                                    country: `${chef.flag} ${chef.countryLabel}`,
+                                    websiteUrl,
+                                    youtubeUrl: chefYouTubeSearchUrl(chef, dishForChefs),
+                                  },
+                                });
+                              }}
+                              className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-50 active:scale-95"
                             >
-                              🌐 Search {chef.name}&apos;s Website
-                            </a>
+                              🌐 Browse {chef.name}&apos;s Website
+                            </button>
                           )}
-                          <a
-                            href={chefYouTubeSearchUrl(chef, dishForChefs)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-red-600 ring-1 ring-red-200 transition active:scale-95"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playPop();
+                              onOpenBrowser?.({
+                                url: chefYouTubeSearchUrl(chef, dishForChefs),
+                                query: dishForChefs,
+                                tab: "youtube",
+                                chef: {
+                                  name: chef.name,
+                                  emoji: chef.emoji,
+                                  country: `${chef.flag} ${chef.countryLabel}`,
+                                  websiteUrl: websiteUrl ?? null,
+                                  youtubeUrl: chefYouTubeSearchUrl(chef, dishForChefs),
+                                },
+                              });
+                            }}
+                            className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 active:scale-95"
                           >
-                            📺 Search on YouTube
-                          </a>
+                            📺 Browse YouTube &amp; Import
+                          </button>
                         </div>
                       </div>
                     );
@@ -867,18 +940,52 @@ export function SmartRecipeFinder({ initialQuery, initialMode, rejectedRecipeNam
               <div className="rounded-2xl bg-fuchsia-50 p-3 ring-1 ring-fuchsia-200">
                 <p className="text-sm font-black text-fuchsia-800">⭐ {candidate.chefName} style {candidate.chefCountry ? `• ${candidate.chefCountry}` : ""}</p>
                 <p className="mt-0.5 text-xs font-semibold text-fuchsia-700">
-                  This in-app version is inspired by {candidate.chefName}&apos;s cooking. Want their exact original? Search with a grown-up:
+                  This in-app version is inspired by {candidate.chefName}&apos;s cooking. Want their exact original? Browse inside the app &amp; import with AI Onboarding:
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {candidate.chefWebsiteSearchUrl && (
-                    <a href={candidate.chefWebsiteSearchUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-sky-700 ring-1 ring-sky-200 transition active:scale-95">
-                      🌐 {candidate.chefName}&apos;s Website
-                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playPop();
+                        onOpenBrowser?.({
+                          url: candidate.chefWebsiteSearchUrl,
+                          query: candidate.name,
+                          tab: "website",
+                          chef: {
+                            name: candidate.chefName!,
+                            country: candidate.chefCountry,
+                            websiteUrl: candidate.chefWebsiteSearchUrl,
+                            youtubeUrl: candidate.chefYouTubeSearchUrl ?? null,
+                          },
+                        });
+                      }}
+                      className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-50 active:scale-95"
+                    >
+                      🌐 Browse {candidate.chefName}&apos;s Website
+                    </button>
                   )}
                   {candidate.chefYouTubeSearchUrl && (
-                    <a href={candidate.chefYouTubeSearchUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-red-600 ring-1 ring-red-200 transition active:scale-95">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playPop();
+                        onOpenBrowser?.({
+                          url: candidate.chefYouTubeSearchUrl,
+                          query: candidate.name,
+                          tab: "youtube",
+                          chef: {
+                            name: candidate.chefName!,
+                            country: candidate.chefCountry,
+                            websiteUrl: candidate.chefWebsiteSearchUrl ?? null,
+                            youtubeUrl: candidate.chefYouTubeSearchUrl,
+                          },
+                        });
+                      }}
+                      className="flex-1 rounded-xl bg-white px-3 py-2 text-center text-xs font-extrabold text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 active:scale-95"
+                    >
                       📺 {candidate.chefName} on YouTube
-                    </a>
+                    </button>
                   )}
                 </div>
               </div>

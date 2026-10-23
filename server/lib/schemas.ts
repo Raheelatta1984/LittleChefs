@@ -72,6 +72,8 @@ export const onboardingSchema = z.object({
 export const importSchema = z.object({
   inputValue: z.string().trim().min(2).max(20_000),
   inputType: z.enum(["url", "youtube", "text", "dish"]).optional(),
+  allowAiFallback: z.boolean().optional(),
+  draftHint: draftSchema.optional(),
 });
 
 export const confirmImportSchema = z.object({

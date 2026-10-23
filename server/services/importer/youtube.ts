@@ -28,6 +28,7 @@ export type YouTubeMeta = {
   title: string;
   channel: string | null;
   description: string;
+  captionText?: string;
   thumbnailUrl: string;
 };
 
@@ -39,7 +40,20 @@ function decodeJsonString(fragment: string): string {
   }
 }
 
-/** Reads title/author from oEmbed (no key needed) and the description from the watch page. */
+function stripCaptionXml(xml: string): string {
+  return xml
+    .replace(/<text[^>]*>/gi, "\n")
+    .replace(/<\/text>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+/** Reads title/author from oEmbed (no key needed) and the description + captions from the watch page. */
 export async function fetchYouTubeMeta(
   rawUrl: string,
   options: { fetchImpl?: typeof fetch } = {},
@@ -55,6 +69,7 @@ export async function fetchYouTubeMeta(
   let title = "";
   let channel: string | null = null;
   let description = "";
+  let captionText = "";
 
   try {
     const oembed = await safeFetchPage(
@@ -82,6 +97,21 @@ export async function fetchYouTubeMeta(
       page.html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/) ??
       page.html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([\s\S]*?)["']\s*\/?>/i);
     if (descriptionMatch) description = decodeJsonString(descriptionMatch[1]);
+
+    // Try extracting English captions if present so videos without written ingredients in
+    // the description can still be parsed accurately.
+    const captionMatch = page.html.match(/"captionTracks":\[\s*\{[^}]*"baseUrl":"((?:[^"\\]|\\.)*)"/);
+    if (captionMatch) {
+      const captionUrl = decodeJsonString(captionMatch[1]);
+      if (captionUrl.startsWith("https://")) {
+        try {
+          const capPage = await safeFetchPage(captionUrl, { fetchImpl: options.fetchImpl });
+          captionText = stripCaptionXml(capPage.html).slice(0, 12_000);
+        } catch {
+          // Captions are optional enhancement only.
+        }
+      }
+    }
   } catch {
     // The description is optional if oEmbed at least gave us a title.
   }
@@ -95,6 +125,7 @@ export async function fetchYouTubeMeta(
     title: title || `YouTube recipe ${videoId}`,
     channel,
     description,
+    captionText: captionText || undefined,
     thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
   };
 }
@@ -102,9 +133,13 @@ export async function fetchYouTubeMeta(
 export async function importFromYouTube(
   rawUrl: string,
   options: { fetchImpl?: typeof fetch } = {},
-): Promise<{ draft: RecipeDraft; description: string }> {
+): Promise<{ draft: RecipeDraft; description: string; captionText: string; meta: YouTubeMeta }> {
   const meta = await fetchYouTubeMeta(rawUrl, options);
-  const draft = parseRecipeFromText(meta.description, {
+  const combinedSource =
+    meta.description.trim().length >= 40
+      ? meta.description
+      : [meta.description, meta.captionText ?? ""].filter(Boolean).join("\n\n");
+  const draft = parseRecipeFromText(combinedSource, {
     title: meta.title,
     sourceUrl: `https://www.youtube.com/watch?v=${meta.videoId}`,
     sourceVideoId: meta.videoId,
@@ -113,5 +148,5 @@ export async function importFromYouTube(
   draft.sourceType = "youtube";
   draft.heroImageUrl = meta.thumbnailUrl;
   draft.sourceAuthor = meta.channel;
-  return { draft, description: meta.description };
+  return { draft, description: meta.description, captionText: meta.captionText ?? "", meta };
 }

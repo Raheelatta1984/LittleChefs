@@ -73,7 +73,7 @@ export type FetchedPage = { url: string; html: string; contentType: string };
  */
 export async function safeFetchPage(
   rawUrl: string,
-  options: { fetchImpl?: typeof fetch; accept?: string } = {},
+  options: { fetchImpl?: typeof fetch; accept?: string; userAgent?: string } = {},
 ): Promise<FetchedPage> {
   const doFetch = options.fetchImpl ?? fetch;
   let url = normaliseUrl(rawUrl);
@@ -88,9 +88,11 @@ export async function safeFetchPage(
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent": "ChefUniverseBot/1.0 (+recipe import; contact: app owner)",
+          "user-agent":
+            options.userAgent ??
+            "Mozilla/5.0 (compatible; ChefUniverseBot/1.0; +recipe import)",
           accept: options.accept ?? "text/html,application/xhtml+xml,application/ld+json;q=0.9,*/*;q=0.5",
-          "accept-language": "en",
+          "accept-language": "en-US,en;q=0.9",
         },
       });
 

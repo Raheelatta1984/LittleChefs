@@ -63,10 +63,16 @@ security, not by the UI (see §5).
 | `GET` | `/catalogue?q=` | Browse shared catalogue (no owner data) |
 | `GET` | `/catalogue/:id` | Full shared recipe (no owner data) |
 
+### In-app recipe & YouTube browser
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/browser/navigate?url=` | SSRF-guarded fetch of a recipe website or web search; returns sanitized `srcDoc` HTML (with link-click interception), extracted recipe cards, and `detectedRecipe` when on a recipe page |
+| `GET` | `/browser/youtube?q=` | Searches YouTube or opens a channel/video URL; returns playable video cards (`ytInitialData` + metadata) and `detectedRecipe` when available |
+
 ### AI onboarding (import)
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/imports` | `{ inputValue }` — URL, YouTube link, pasted description or dish name. Returns a **review draft** + warnings + confidence |
+| `POST` | `/imports` | `{ inputValue, allowAiFallback?, draftHint? }` — URL, YouTube link, pasted description or dish name. Returns a **review draft** + warnings + confidence |
 | `GET` | `/imports/:id` | Inspect a previous import |
 | `POST` | `/imports/:id/confirm` | Save the (optionally edited) draft into my book; also adds it to the shared catalogue when my role may publish |
 

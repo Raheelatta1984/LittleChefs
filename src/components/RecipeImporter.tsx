@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Ingredient, ImportJobView, RecipeDraft, RecipeView, Step } from "../../shared/types";
 import { api, ApiClientError } from "../lib/api";
+import { YouTubePlayer } from "./YouTubePlayer";
 import { playPop, playSuccess } from "../utils/audio";
 
 type Phase = "input" | "loading" | "review" | "saving";
@@ -36,30 +37,45 @@ export function RecipeImporter({
   token,
   canPublish,
   initialQuery,
+  autoStart = false,
+  allowAiFallback = false,
+  draftHint = null,
   onClose,
   onSaved,
+  onSavedAndOnboard,
+  onOpenBrowser,
 }: {
   token: string;
   canPublish: boolean;
   initialQuery: string;
+  autoStart?: boolean;
+  allowAiFallback?: boolean;
+  draftHint?: RecipeDraft | null;
   onClose: () => void;
   onSaved: (recipe: RecipeView) => void;
+  onSavedAndOnboard?: (recipe: RecipeView) => void;
+  onOpenBrowser?: (query: string) => void;
 }) {
-  const [phase, setPhase] = useState<Phase>("input");
+  const [phase, setPhase] = useState<Phase>(autoStart && initialQuery.trim() ? "loading" : "input");
   const [input, setInput] = useState(initialQuery);
   const [job, setJob] = useState<ImportJobView | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoRanRef = useRef(false);
 
-  async function runImport() {
-    if (!input.trim()) {
+  async function runImport(overrideValue?: string) {
+    const value = (overrideValue ?? input).trim();
+    if (!value) {
       setError("Paste a recipe link, a YouTube link, or the recipe description.");
       return;
     }
     setPhase("loading");
     setError(null);
     try {
-      const result = await api.startImport(token, input.trim());
+      const result = await api.startImport(token, value, {
+        allowAiFallback,
+        draftHint: value === initialQuery.trim() ? draftHint : null,
+      });
       setJob(result);
       setDraft(draftFromJob(result));
       setPhase("review");
@@ -69,7 +85,14 @@ export function RecipeImporter({
     }
   }
 
-  async function save() {
+  useEffect(() => {
+    if (!autoStart || autoRanRef.current || !initialQuery.trim()) return;
+    autoRanRef.current = true;
+    void runImport(initialQuery.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function save(startOnboarding = false) {
     if (!job || !draft) return;
     if (draft.ingredients.length === 0 || draft.steps.length === 0) {
       setError("Add at least one ingredient and one step before saving.");
@@ -81,7 +104,11 @@ export function RecipeImporter({
       const result = await api.confirmImport(token, job.id, draft);
       const recipe = await api.getRecipe(token, result.recipeId);
       playSuccess();
-      onSaved(recipe);
+      if (startOnboarding && onSavedAndOnboard) {
+        onSavedAndOnboard(recipe);
+      } else {
+        onSaved(recipe);
+      }
     } catch (caught) {
       setError(caught instanceof ApiClientError ? caught.message : "Could not save this recipe.");
       setPhase("review");
@@ -155,6 +182,18 @@ export function RecipeImporter({
             >
               🔮 Import &amp; map this recipe
             </button>
+            {onOpenBrowser && (
+              <button
+                type="button"
+                onClick={() => {
+                  playPop();
+                  onOpenBrowser(input.trim());
+                }}
+                className="mt-2 w-full rounded-3xl bg-sky-50 py-3 text-sm font-black text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-100 active:scale-95"
+              >
+                🌐 Don&apos;t have a link yet? Browse Websites &amp; YouTube In-App
+              </button>
+            )}
             <p className="mt-2 text-center text-[11px] font-bold text-slate-400">
               You&apos;ll review everything before it is saved to your private book.
             </p>
@@ -190,6 +229,10 @@ export function RecipeImporter({
                 {draft.ingredients.length} ingredients • {draft.steps.length} steps
               </span>
             </div>
+
+            {draft.sourceVideoId && (
+              <YouTubePlayer youtubeIdOrUrl={draft.sourceVideoId} title={draft.title} />
+            )}
 
             <label className="block text-sm font-black text-slate-600" htmlFor="import-title">
               Recipe name
@@ -388,11 +431,28 @@ export function RecipeImporter({
               </p>
             )}
 
+            {onSavedAndOnboard && (
+              <button
+                type="button"
+                onClick={() => void save(true)}
+                disabled={phase === "saving"}
+                className="w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-orange-500 py-3.5 font-black text-white shadow-lg transition active:scale-95 disabled:opacity-60"
+              >
+                {phase === "saving"
+                  ? "Saving & opening AI Onboarding…"
+                  : "🍽️ Save & Start AI Onboarding (Portions & Shopping List)"}
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => void save()}
+              onClick={() => void save(false)}
               disabled={phase === "saving"}
-              className="w-full rounded-3xl bg-gradient-to-r from-emerald-500 to-teal-500 py-3.5 font-black text-white shadow-lg transition active:scale-95 disabled:opacity-60"
+              className={`w-full rounded-3xl py-3.5 font-black transition active:scale-95 disabled:opacity-60 ${
+                onSavedAndOnboard
+                  ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200 hover:bg-emerald-100"
+                  : "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg"
+              }`}
             >
               {phase === "saving" ? "Saving to my book…" : "✅ Save to my private book"}
             </button>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { findRecipe, suggestionChips, type Recipe } from "./data/recipes";
 import {
   NEW_RECIPE_COST,
@@ -7,7 +7,11 @@ import {
   type PlayerState,
   type RoomItem,
 } from "./data/rewards";
-import { SmartRecipeFinder, type FoundRecipe } from "./components/SmartRecipeFinder";
+import {
+  SmartRecipeFinder,
+  type FoundRecipe,
+  type OpenBrowserRequest,
+} from "./components/SmartRecipeFinder";
 import { YouTubePlayer } from "./components/YouTubePlayer";
 import { RewardsHub } from "./components/RewardsHub";
 import { InteractiveCookingWidget } from "./components/InteractiveWidget";
@@ -21,13 +25,17 @@ import { DbRecipeDetail } from "./components/DbRecipeDetail";
 import { RecipeImporter } from "./components/RecipeImporter";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { InternalMatches } from "./components/InternalMatches";
+import { InAppBrowser, type BrowserImportPayload } from "./components/InAppBrowser";
+import { WhatsNewTab } from "./components/WhatsNewTab";
+import { hasUnseenWhatsNew, type WhatsNewAction } from "./data/whatsNew";
 import type {
-  ChefProfile, OnboardingResult, RecipeView, SearchResponse,
+  ChefProfile, OnboardingResult, RecipeDraft, RecipeView, RoleId, SearchResponse,
 } from "../shared/types";
 
 type Screen =
   | "welcome"
   | "kitchen"
+  | "whatsNew"
   | "recipe"
   | "cooking"
   | "done"
@@ -86,6 +94,13 @@ function difficultyColor(d: Recipe["difficulty"]) {
   return "bg-amber-100 text-amber-700 border-amber-200";
 }
 
+function mapLevelToRole(levelId: string): RoleId {
+  if (levelId === "teen") return "teen";
+  if (levelId === "home") return "adult";
+  if (levelId === "master") return "master";
+  return "junior";
+}
+
 export default function App() {
   const [history, setHistory] = useState<Screen[]>(["welcome"]);
   const screen: Screen = history[history.length - 1] ?? "welcome";
@@ -124,8 +139,14 @@ export default function App() {
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [showImporter, setShowImporter] = useState(false);
   const [importerQuery, setImporterQuery] = useState("");
+  const [importerAutoStart, setImporterAutoStart] = useState(false);
+  const [importerAllowFallback, setImporterAllowFallback] = useState(false);
+  const [importerDraftHint, setImporterDraftHint] = useState<RecipeDraft | null>(null);
   const [onboardingRecipe, setOnboardingRecipe] = useState<RecipeView | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [browserState, setBrowserState] = useState<OpenBrowserRequest | null>(null);
+  const [unseenWhatsNew, setUnseenWhatsNew] = useState<boolean>(hasUnseenWhatsNew);
+  const pendingAuthActionRef = useRef<((authed: AuthState) => void) | null>(null);
 
   const chefName = name.trim() || chef?.displayName || "Little Chef";
 
@@ -160,6 +181,109 @@ export default function App() {
     setHistory(["kitchen"]);
   }
 
+  async function ensureChefAuth(afterAuth?: (authed: AuthState) => void): Promise<AuthState | null> {
+    if (auth) {
+      afterAuth?.(auth);
+      return auth;
+    }
+
+    const rawName = name.trim();
+    const displayName = rawName.length >= 2 ? rawName.slice(0, 40) : rawName ? `Chef ${rawName}` : "Little Chef";
+    const role = mapLevelToRole(levelId);
+
+    try {
+      let next: AuthState;
+      try {
+        next = await api.createChef({ displayName, role, avatar: characterId, pin: null });
+      } catch (err) {
+        if (err instanceof ApiClientError && err.status === 409) {
+          next = await api.signIn({ displayName, role, pin: null });
+        } else {
+          throw err;
+        }
+      }
+      saveAuth(next);
+      setAuth(next);
+      setPlayer((p) => ({ ...p, points: Math.max(p.points, next.chef.points) }));
+      try {
+        setMyRecipes(await api.listRecipes(next.token));
+      } catch {
+        /* ignore */
+      }
+      afterAuth?.(next);
+      return next;
+    } catch {
+      if (afterAuth) {
+        pendingAuthActionRef.current = afterAuth;
+      }
+      setShowChefGate(true);
+      return null;
+    }
+  }
+
+  function openInternalBrowser(request: OpenBrowserRequest) {
+    playPop();
+    setShowSmartFinder(false);
+    setSearchResult(null);
+    setShowImporter(false);
+    setBrowserState(request);
+  }
+
+  function openAiImporter(options?: {
+    query?: string;
+    autoStart?: boolean;
+    allowFallback?: boolean;
+    draftHint?: RecipeDraft | null;
+  }) {
+    playPop();
+    void ensureChefAuth(() => {
+      setImporterQuery(options?.query ?? "");
+      setImporterAutoStart(Boolean(options?.autoStart));
+      setImporterAllowFallback(Boolean(options?.allowFallback));
+      setImporterDraftHint(options?.draftHint ?? null);
+      setShowImporter(true);
+    });
+  }
+
+  function handleBrowserImport(payload: BrowserImportPayload) {
+    setBrowserState(null);
+    openAiImporter({
+      query: payload.inputValue,
+      autoStart: true,
+      allowFallback: true,
+      draftHint: payload.draftHint ?? null,
+    });
+  }
+
+  function handleWhatsNewAction(action: WhatsNewAction) {
+    if (action === "open-browser") {
+      openInternalBrowser({ query: foodQuery || "Chicken Biryani", tab: "website" });
+      return;
+    }
+    if (action === "open-youtube-browser") {
+      openInternalBrowser({ query: foodQuery || "Chicken Biryani", tab: "youtube" });
+      return;
+    }
+    if (action === "open-importer") {
+      openAiImporter({ query: foodQuery });
+      return;
+    }
+    if (action === "open-my-recipes") {
+      void ensureChefAuth((authed) => {
+        void api.listRecipes(authed.token).then(setMyRecipes).catch(() => {});
+        navigate("myRecipes");
+      });
+      return;
+    }
+    if (action === "open-smart-finder") {
+      void openFinder(foodQuery);
+      return;
+    }
+    if (action === "open-rewards") {
+      navigate("rewards");
+    }
+  }
+
   function handleStart() {
     if (!name.trim()) {
       setShakeName(true);
@@ -169,6 +293,9 @@ export default function App() {
     }
     playPop();
     navigate("kitchen");
+    if (!auth) {
+      void ensureChefAuth();
+    }
   }
 
   // --- Internal-first search, then AI ---
@@ -223,6 +350,11 @@ export default function App() {
       setMyRecipes(await api.listRecipes(next.token));
     } catch {
       /* the book loads again when opened */
+    }
+    const pending = pendingAuthActionRef.current;
+    pendingAuthActionRef.current = null;
+    if (pending) {
+      pending(next);
     }
   }
 
@@ -441,11 +573,11 @@ export default function App() {
 
       <div className="relative mx-auto flex min-h-screen max-w-lg flex-col px-4 py-6 sm:px-6">
         {screen !== "welcome" && (
-          <nav className="sticky top-0 z-40 -mx-1 mb-4 flex items-center gap-2 rounded-2xl bg-white/85 px-2 py-2 shadow ring-1 ring-orange-100 backdrop-blur" aria-label="App navigation">
+          <nav className="sticky top-0 z-40 -mx-1 mb-4 flex flex-wrap items-center gap-1.5 rounded-2xl bg-white/85 px-2 py-2 shadow ring-1 ring-orange-100 backdrop-blur" aria-label="App navigation">
             <button
               type="button"
               onClick={goHome}
-              className="rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 px-4 py-2 font-black text-white shadow transition active:scale-95"
+              className="rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 px-3 py-2 text-sm font-black text-white shadow transition active:scale-95"
             >
               🏠 Home
             </button>
@@ -453,15 +585,35 @@ export default function App() {
               type="button"
               onClick={goBack}
               disabled={history.length <= 1}
-              className="rounded-xl bg-white px-4 py-2 font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95 disabled:opacity-40"
+              className="rounded-xl bg-white px-3 py-2 text-sm font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95 disabled:opacity-40"
             >
               ← Back
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                playPop();
+                navigate("whatsNew");
+              }}
+              aria-current={screen === "whatsNew" ? "page" : undefined}
+              className={`relative rounded-xl px-3 py-2 text-sm font-black transition active:scale-95 ${
+                screen === "whatsNew"
+                  ? "bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow"
+                  : "bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200 hover:bg-fuchsia-100"
+              }`}
+            >
+              ✨ What&apos;s New
+              {unseenWhatsNew && (
+                <span className="ml-1 inline-block rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-black uppercase text-white">
+                  New
+                </span>
+              )}
             </button>
             {chef ? (
               <button
                 type="button"
                 onClick={() => { playPop(); void refreshMyRecipes(); navigate("myRecipes"); }}
-                className="ml-auto rounded-xl bg-white px-3 py-2 font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95"
+                className="ml-auto rounded-xl bg-white px-3 py-2 text-sm font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95"
                 aria-label="Open my private recipe book"
               >
                 📖 <span className="hidden sm:inline">My Recipes</span>
@@ -470,7 +622,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => { playPop(); setShowChefGate(true); }}
-                className="ml-auto rounded-xl bg-white px-3 py-2 font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95"
+                className="ml-auto rounded-xl bg-white px-3 py-2 text-sm font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95"
               >
                 🔐 <span className="hidden sm:inline">Sign in</span>
               </button>
@@ -478,7 +630,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => { playPop(); navigate("rewards"); }}
-              className="rounded-xl bg-amber-400 px-4 py-2 font-black text-amber-900 shadow transition hover:bg-amber-300 active:scale-95"
+              className="rounded-xl bg-amber-400 px-3 py-2 text-sm font-black text-amber-900 shadow transition hover:bg-amber-300 active:scale-95"
               aria-label="Open rewards shop"
             >
               ⭐ {player.points}
@@ -496,6 +648,17 @@ export default function App() {
             levelId={levelId}
             onSelectLevel={(id) => { playPop(); setLevelId(id); }}
             onStart={handleStart}
+            unseenWhatsNew={unseenWhatsNew}
+            onOpenWhatsNew={() => { playPop(); navigate("whatsNew"); }}
+          />
+        )}
+
+        {screen === "whatsNew" && (
+          <WhatsNewTab
+            chefName={chefName}
+            onAction={handleWhatsNewAction}
+            onSeen={() => setUnseenWhatsNew(false)}
+            onBack={history.length > 1 ? goBack : undefined}
           />
         )}
 
@@ -512,8 +675,22 @@ export default function App() {
             onRewards={() => navigate("rewards")}
             chef={chef}
             onSignIn={() => { playPop(); setShowChefGate(true); }}
-            onMyRecipes={() => { playPop(); void refreshMyRecipes(); navigate("myRecipes"); }}
-            onImport={() => { playPop(); setImporterQuery(""); setShowImporter(true); }}
+            onMyRecipes={() => {
+              if (chef) {
+                playPop();
+                void refreshMyRecipes();
+                navigate("myRecipes");
+              } else {
+                void ensureChefAuth((authed) => {
+                  void api.listRecipes(authed.token).then(setMyRecipes).catch(() => {});
+                  navigate("myRecipes");
+                });
+              }
+            }}
+            onImport={() => openAiImporter({ query: foodQuery })}
+            onOpenBrowser={(tab) => openInternalBrowser({ query: foodQuery, tab })}
+            onOpenWhatsNew={() => { playPop(); navigate("whatsNew"); }}
+            unseenWhatsNew={unseenWhatsNew}
             onSignOut={() => void signOut()}
           />
         )}
@@ -524,7 +701,8 @@ export default function App() {
             loading={myRecipesLoading}
             error={myRecipesError}
             onOpen={(entry) => void openDbRecipe(entry.id)}
-            onImport={() => { setImporterQuery(""); setShowImporter(true); }}
+            onImport={() => openAiImporter()}
+            onBrowse={() => openInternalBrowser({ query: foodQuery, tab: "website" })}
             onDelete={(entry) => {
               if (!auth) return;
               void api
@@ -546,6 +724,7 @@ export default function App() {
             onStartPrep={startPrep}
             onDelete={() => void deleteDbRecipe()}
             deleting={deletingRecipe}
+            onOpenSource={(url) => openInternalBrowser({ url, query: dbRecipe.title })}
           />
         )}
 
@@ -565,6 +744,7 @@ export default function App() {
             onToggleIngredient={toggleIngredient}
             onStartCooking={startCooking}
             onNotThis={() => openAiChefFinder(recipe.name, recipe.name, (recipe as FoundRecipe).mealId)}
+            onOpenBrowser={openInternalBrowser}
           />
         )}
 
@@ -626,10 +806,11 @@ export default function App() {
           onOpenOwn={(id) => void openDbRecipe(id)}
           onClaim={(catalogueId) => void claimShared(catalogueId)}
           onSearchOnline={openOnlineFinder}
+          onBrowse={() => openInternalBrowser({ query: searchResult.query, tab: "website" })}
           onImport={() => {
-            setImporterQuery(searchResult.query);
+            const q = searchResult.query;
             setSearchResult(null);
-            setShowImporter(true);
+            openAiImporter({ query: q });
           }}
           onClose={() => setSearchResult(null)}
         />
@@ -640,13 +821,46 @@ export default function App() {
           token={auth.token}
           canPublish={chef?.canPublish ?? false}
           initialQuery={importerQuery}
-          onClose={() => setShowImporter(false)}
+          autoStart={importerAutoStart}
+          allowAiFallback={importerAllowFallback}
+          draftHint={importerDraftHint}
+          onClose={() => {
+            setShowImporter(false);
+            setImporterAutoStart(false);
+            setImporterAllowFallback(false);
+            setImporterDraftHint(null);
+          }}
+          onOpenBrowser={(q) => openInternalBrowser({ query: q || foodQuery, tab: "website" })}
           onSaved={(saved) => {
             setShowImporter(false);
+            setImporterAutoStart(false);
+            setImporterAllowFallback(false);
+            setImporterDraftHint(null);
             setDbRecipe(saved);
             navigate("dbRecipe");
             void refreshMyRecipes();
           }}
+          onSavedAndOnboard={(saved) => {
+            setShowImporter(false);
+            setImporterAutoStart(false);
+            setImporterAllowFallback(false);
+            setImporterDraftHint(null);
+            setDbRecipe(saved);
+            setOnboardingRecipe(saved);
+            navigate("onboarding");
+            void refreshMyRecipes();
+          }}
+        />
+      )}
+
+      {browserState && (
+        <InAppBrowser
+          initialUrl={browserState.url}
+          initialQuery={browserState.query ?? foodQuery}
+          initialTab={browserState.tab}
+          chefContext={browserState.chef}
+          onClose={() => setBrowserState(null)}
+          onImportWithAi={handleBrowserImport}
         />
       )}
 
@@ -666,6 +880,7 @@ export default function App() {
           rejectedMealId={finderRejectedMealId}
           onClose={() => setShowSmartFinder(false)}
           onRecipeFound={handleRecipeFound}
+          onOpenBrowser={openInternalBrowser}
         />
       )}
 
@@ -710,6 +925,8 @@ function WelcomeScreen({
   levelId,
   onSelectLevel,
   onStart,
+  unseenWhatsNew,
+  onOpenWhatsNew,
 }: {
   characterId: string;
   onSelectCharacter: (id: string) => void;
@@ -719,6 +936,8 @@ function WelcomeScreen({
   levelId: string;
   onSelectLevel: (id: string) => void;
   onStart: () => void;
+  unseenWhatsNew: boolean;
+  onOpenWhatsNew: () => void;
 }) {
   return (
     <main className="flex flex-1 flex-col">
@@ -732,6 +951,20 @@ function WelcomeScreen({
         }
         .animate-shake { animation: shake 0.45s ease-in-out; }
       `}</style>
+      <div className="mb-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onOpenWhatsNew}
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-1.5 text-xs font-black text-fuchsia-700 shadow ring-1 ring-fuchsia-200 transition hover:bg-fuchsia-50 active:scale-95"
+        >
+          <span>✨ What&apos;s New</span>
+          {unseenWhatsNew && (
+            <span className="rounded-full bg-gradient-to-r from-fuchsia-500 to-pink-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+              New
+            </span>
+          )}
+        </button>
+      </div>
       <div className="text-center">
         <p className="text-5xl" aria-hidden="true">🍳</p>
         <h1 className="mt-1 bg-gradient-to-r from-orange-500 via-pink-500 to-fuchsia-500 bg-clip-text text-4xl font-black text-transparent">
@@ -812,6 +1045,9 @@ function KitchenScreen({
   onSignIn,
   onMyRecipes,
   onImport,
+  onOpenBrowser,
+  onOpenWhatsNew,
+  unseenWhatsNew,
   onSignOut,
 }: {
   character: WelcomeCharacter;
@@ -827,6 +1063,9 @@ function KitchenScreen({
   onSignIn: () => void;
   onMyRecipes: () => void;
   onImport: () => void;
+  onOpenBrowser: (tab: "website" | "youtube") => void;
+  onOpenWhatsNew: () => void;
+  unseenWhatsNew: boolean;
   onSignOut: () => void;
 }) {
   return (
@@ -847,6 +1086,75 @@ function KitchenScreen({
         </button>
       </header>
 
+      <button
+        type="button"
+        onClick={onOpenWhatsNew}
+        className="flex w-full items-center gap-3 rounded-3xl bg-gradient-to-r from-fuchsia-50 via-pink-50 to-orange-50 p-3.5 text-left shadow-sm ring-1 ring-fuchsia-200 transition hover:brightness-98 active:scale-[0.99]"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 to-pink-500 text-lg text-white shadow">
+          ✨
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 font-black text-slate-800">
+            What&apos;s New in Chef Universe
+            {unseenWhatsNew && (
+              <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+                New
+              </span>
+            )}
+          </span>
+          <span className="block truncate text-xs font-bold text-slate-500">
+            In-App Website &amp; YouTube Browser + 1-Tap AI Recipe Onboarding!
+          </span>
+        </span>
+        <span className="shrink-0 font-black text-fuchsia-600">→</span>
+      </button>
+
+      <section className="rounded-3xl bg-white/95 p-4 shadow ring-1 ring-sky-100" aria-label="In-app browser and AI recipe onboarding">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-base font-black text-slate-800">
+              🌐📺 In-App Recipe Browser &amp; AI Onboarding
+            </h3>
+            <p className="mt-0.5 text-xs font-bold text-slate-500">
+              Browse chef websites or YouTube channels right inside the app — pick the right recipe &amp; import everything!
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenBrowser("website")}
+            className="rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2.5 text-xs font-black text-white shadow transition active:scale-95"
+          >
+            🌐 Browse Websites
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenBrowser("youtube")}
+            className="rounded-2xl bg-gradient-to-r from-red-500 to-pink-500 px-3 py-2.5 text-xs font-black text-white shadow transition active:scale-95"
+          >
+            📺 Browse YouTube
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onImport}
+            className="rounded-2xl bg-gradient-to-r from-fuchsia-500 to-pink-500 px-3 py-2.5 text-xs font-black text-white shadow transition active:scale-95"
+          >
+            🤖 AI Recipe Onboarding
+          </button>
+          <button
+            type="button"
+            onClick={onMyRecipes}
+            className="rounded-2xl bg-slate-900 px-3 py-2.5 text-xs font-black text-white shadow transition active:scale-95"
+          >
+            📖 My Recipe Book
+          </button>
+        </div>
+      </section>
+
       {chef ? (
         <section className="rounded-3xl bg-white/90 p-4 shadow ring-1 ring-emerald-100" aria-label="My private kitchen">
           <div className="flex items-center gap-2">
@@ -865,22 +1173,6 @@ function KitchenScreen({
               Sign out
             </button>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onMyRecipes}
-              className="rounded-2xl bg-slate-900 px-3 py-2.5 font-black text-white shadow transition active:scale-95"
-            >
-              📖 My recipes
-            </button>
-            <button
-              type="button"
-              onClick={onImport}
-              className="rounded-2xl bg-gradient-to-r from-fuchsia-500 to-pink-500 px-3 py-2.5 font-black text-white shadow transition active:scale-95"
-            >
-              🤖 AI import
-            </button>
-          </div>
         </section>
       ) : (
         <button
@@ -890,7 +1182,7 @@ function KitchenScreen({
         >
           <span className="text-3xl" aria-hidden="true">🔐</span>
           <span className="min-w-0 flex-1">
-            <span className="block font-black text-slate-800">Open my private recipe book</span>
+            <span className="block font-black text-slate-800">Switch chef profile or add a secret PIN</span>
             <span className="block text-xs font-bold text-slate-500">
               Junior, Teen, Adult or Master Chef — your recipes stay yours alone.
             </span>
@@ -968,12 +1260,14 @@ function RecipeScreen({
   onToggleIngredient,
   onStartCooking,
   onNotThis,
+  onOpenBrowser,
 }: {
   recipe: Recipe;
   checkedIngredients: Record<number, boolean>;
   onToggleIngredient: (i: number) => void;
   onStartCooking: () => void;
   onNotThis: () => void;
+  onOpenBrowser: (request: OpenBrowserRequest) => void;
 }) {
   const q = encodeURIComponent(recipe.name);
   const checkedCount = recipe.ingredients.filter((_, i) => checkedIngredients[i]).length;
@@ -1003,14 +1297,50 @@ function RecipeScreen({
         <section className="rounded-3xl bg-fuchsia-50 p-4 ring-1 ring-fuchsia-200" aria-label={`Recipe inspired by ${recipe.chefName}`}>
           <h3 className="font-black text-fuchsia-800">⭐ {recipe.chefName} style {recipe.chefCountry ? `• ${recipe.chefCountry}` : ""}</h3>
           <p className="mt-1 text-sm font-semibold text-fuchsia-700">
-            This in-app recipe is inspired by {recipe.chefName}&apos;s cooking. Want their exact original version? Search with a grown-up:
+            This in-app recipe is inspired by {recipe.chefName}&apos;s cooking. Want their exact original version? Browse inside the app &amp; import with AI Onboarding:
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {recipe.chefWebsiteSearchUrl && (
-              <a href={recipe.chefWebsiteSearchUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-full bg-white px-3 py-2 text-center text-sm font-extrabold text-sky-700 ring-1 ring-sky-200 transition active:scale-95">🌐 {recipe.chefName}&apos;s Website</a>
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenBrowser({
+                    url: recipe.chefWebsiteSearchUrl,
+                    query: recipe.name,
+                    tab: "website",
+                    chef: {
+                      name: recipe.chefName!,
+                      country: recipe.chefCountry,
+                      websiteUrl: recipe.chefWebsiteSearchUrl,
+                      youtubeUrl: recipe.chefYouTubeSearchUrl ?? null,
+                    },
+                  })
+                }
+                className="flex-1 rounded-full bg-white px-3 py-2 text-center text-sm font-extrabold text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-50 active:scale-95"
+              >
+                🌐 Browse {recipe.chefName}&apos;s Website
+              </button>
             )}
             {recipe.chefYouTubeSearchUrl && (
-              <a href={recipe.chefYouTubeSearchUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-full bg-white px-3 py-2 text-center text-sm font-extrabold text-red-600 ring-1 ring-red-200 transition active:scale-95">📺 {recipe.chefName} on YouTube</a>
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenBrowser({
+                    url: recipe.chefYouTubeSearchUrl,
+                    query: recipe.name,
+                    tab: "youtube",
+                    chef: {
+                      name: recipe.chefName!,
+                      country: recipe.chefCountry,
+                      websiteUrl: recipe.chefWebsiteSearchUrl ?? null,
+                      youtubeUrl: recipe.chefYouTubeSearchUrl,
+                    },
+                  })
+                }
+                className="flex-1 rounded-full bg-white px-3 py-2 text-center text-sm font-extrabold text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 active:scale-95"
+              >
+                📺 {recipe.chefName} on YouTube
+              </button>
             )}
           </div>
         </section>
@@ -1021,14 +1351,44 @@ function RecipeScreen({
           <h3 className="font-black text-sky-800">✨ Universal Chef Recipe ready!</h3>
           <p className="mt-1 text-sm font-semibold text-sky-700">
             We don&apos;t have an exact built-in recipe for this dish yet, so our Universal Chef built you a safe, step-by-step version.
-            Want the original? Try these trusted searches with a grown-up:
+            Want to browse &amp; import the exact original right inside the app with AI Onboarding?
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <a href={`https://cakesbymk.com/?s=${q}`} target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-pink-600 ring-1 ring-pink-200 transition active:scale-95">🍰 Cakes by MK</a>
-            <a href={`https://www.google.com/search?q=${q}+recipe&safe=active`} target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-sky-600 ring-1 ring-sky-200 transition active:scale-95">🔎 Google Safe Search</a>
-            <a href={`https://duckduckgo.com/?q=${q}+recipe`} target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-orange-600 ring-1 ring-orange-200 transition active:scale-95">🦆 DuckDuckGo</a>
-            <a href={`https://www.foodfusion.com/?s=${q}`} target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-emerald-600 ring-1 ring-emerald-200 transition active:scale-95">🍳 Food Fusion</a>
-            <a href={`https://www.youtube.com/results?search_query=cakes+by+mk+${q}`} target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-red-600 ring-1 ring-red-200 transition active:scale-95">📺 MK Video Tutorial</a>
+            <button
+              type="button"
+              onClick={() => onOpenBrowser({ url: `https://cakesbymk.com/?s=${q}`, query: recipe.name, tab: "website" })}
+              className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-pink-600 ring-1 ring-pink-200 transition hover:bg-pink-50 active:scale-95"
+            >
+              🍰 Cakes by MK
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenBrowser({ url: `https://html.duckduckgo.com/html/?q=${q}+recipe`, query: recipe.name, tab: "website" })}
+              className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-sky-600 ring-1 ring-sky-200 transition hover:bg-sky-50 active:scale-95"
+            >
+              🔎 Web Recipe Search
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenBrowser({ url: `https://www.foodfusion.com/?s=${q}`, query: recipe.name, tab: "website" })}
+              className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-emerald-600 ring-1 ring-emerald-200 transition hover:bg-emerald-50 active:scale-95"
+            >
+              🍳 Food Fusion
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenBrowser({ url: `https://www.youtube.com/results?search_query=cakes+by+mk+${q}`, query: recipe.name, tab: "youtube" })}
+              className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 active:scale-95"
+            >
+              📺 MK Video Tutorial
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenBrowser({ url: `https://www.youtube.com/results?search_query=${q}+recipe`, query: recipe.name, tab: "youtube" })}
+              className="rounded-full bg-white px-3 py-2 text-sm font-extrabold text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 active:scale-95"
+            >
+              📺 YouTube Recipes
+            </button>
           </div>
         </section>
       )}

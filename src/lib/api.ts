@@ -1,6 +1,6 @@
 import type {
-  ChefProfile, ImportJobView, OnboardingAnswers, OnboardingResult, RecipeDraft, RecipeView,
-  Role, SearchResponse, ShoppingListView,
+  BrowserPageResponse, ChefProfile, ImportJobView, OnboardingAnswers, OnboardingResult,
+  RecipeDraft, RecipeView, Role, SearchResponse, ShoppingListView,
 } from "../../shared/types";
 
 // `import.meta.env` only exists under Vite; this keeps the module importable in
@@ -123,10 +123,30 @@ export const api = {
       token,
     }),
 
-  startImport: (token: string, inputValue: string) =>
-    request<{ job: ImportJobView }>("/imports", { method: "POST", token, body: { inputValue } }).then(
-      (r) => r.job,
+  startImport: (
+    token: string,
+    inputValue: string,
+    options?: { allowAiFallback?: boolean; draftHint?: RecipeDraft | null },
+  ) =>
+    request<{ job: ImportJobView }>("/imports", {
+      method: "POST",
+      token,
+      body: {
+        inputValue,
+        ...(options?.allowAiFallback ? { allowAiFallback: true } : {}),
+        ...(options?.draftHint ? { draftHint: options.draftHint } : {}),
+      },
+    }).then((r) => r.job),
+
+  browseNavigate: (url: string) =>
+    request<{ page: BrowserPageResponse }>(`/browser/navigate?url=${encodeURIComponent(url)}`).then(
+      (r) => r.page,
     ),
+
+  browseYouTube: (queryOrUrl: string) =>
+    request<{ page: BrowserPageResponse }>(
+      `/browser/youtube?q=${encodeURIComponent(queryOrUrl)}`,
+    ).then((r) => r.page),
 
   confirmImport: (token: string, jobId: string, draft?: RecipeDraft) =>
     request<{ recipeId: string; catalogueId: string | null; sharedWithCatalogue: boolean }>(

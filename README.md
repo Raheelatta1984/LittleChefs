@@ -11,6 +11,12 @@ and an **onboarding interview** scales every ingredient to the number of people 
 
 ## ✨ Highlights
 
+### ✨ What's New Tab & In-App Recipe + YouTube Browser (V3.2)
+- **✨ What's New tab for every user** — accessible from the Welcome screen, top navigation bar, and Kitchen home with unread indicators and 1-tap feature launchers.
+- **🌐📺 Internal Website & YouTube Channel Browser** — chef website links and YouTube channel searches load **inside Chef Universe** instead of redirecting out of the app.
+- **🃏 Recipe Picker + 🖥️ Sandboxed Live Page View** — inspect extracted recipe cards or browse the sanitized webpage (with link-click interception so every click stays inside the app) and watch YouTube videos via `youtube-nocookie` embeds.
+- **🤖 1-Tap AI-Powered Onboarding for Every User** — pick the exact recipe or cooking video inside the Internal Browser and import the complete recipe (ingredients, steps, timings, photos) straight into portion scaling & aisle-grouped shopping list generation.
+
 ### 🔐 Private, role-scoped recipe books (Postgres + RLS)
 - Four cooking roles: **Junior Chef** (10–14), **Teen Chef** (15–19), **Adult Chef**, **Master Chef**.
 - Each chef has their own book. A chef can open, edit, cook and delete **only their own** recipes —

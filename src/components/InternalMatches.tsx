@@ -8,6 +8,7 @@ export function InternalMatches({
   onClaim,
   onSearchOnline,
   onImport,
+  onBrowse,
   onClose,
 }: {
   result: SearchResponse;
@@ -16,6 +17,7 @@ export function InternalMatches({
   onClaim: (catalogueId: string) => void;
   onSearchOnline: () => void;
   onImport: () => void;
+  onBrowse?: () => void;
   onClose: () => void;
 }) {
   const hasMatches = result.myRecipes.length > 0 || result.sharedMatches.length > 0;
@@ -110,6 +112,15 @@ export function InternalMatches({
         )}
 
         <div className="mt-5 space-y-2">
+          {onBrowse && (
+            <button
+              type="button"
+              onClick={() => { playPop(); onBrowse(); }}
+              className="w-full rounded-3xl bg-gradient-to-r from-sky-500 to-indigo-500 py-3 font-black text-white shadow transition active:scale-95"
+            >
+              🌐📺 Browse Chef Websites &amp; YouTube In-App
+            </button>
+          )}
           <button
             type="button"
             onClick={() => { playPop(); onImport(); }}
