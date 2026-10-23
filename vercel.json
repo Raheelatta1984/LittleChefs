@@ -3,8 +3,18 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api?__path=/$1"
+    },
+    {
+      "source": "/((?!api/|api$|uploads/).*)",
+      "destination": "/index.html"
+    }
+  ],
   "functions": {
-    "api/[...path].js": {
+    "api/index.js": {
       "maxDuration": 60,
       "includeFiles": "{dist-server/server/db/migrations/**,node_modules/@tesseract.js-data/eng/4.0.0/**}",
       "excludeFiles": "{node_modules/@tesseract.js-data/eng/4.0.0_best_int/**,node_modules/tesseract.js-core/tesseract-core-relaxedsimd*,node_modules/tesseract.js-core/tesseract-core-simd.js,node_modules/tesseract.js-core/tesseract-core-simd.wasm*,**/*.map}"

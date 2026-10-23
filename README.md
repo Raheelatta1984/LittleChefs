@@ -24,9 +24,11 @@ and an **onboarding interview** scales every ingredient to the number of people 
   fix the scanned words and re-read, then the normal AI-onboarding flow maps portions + shopping list.
   Website failures now offer one-tap **▶️ YouTube** and **📷 Scan** rescues instead of a dead end.
 - **The “Something went wrong (404)” bug is fixed at the root**: production previously deployed the
-  static app with **no API at all**, so every `/api/*` call 404ed. The repo now ships a Vercel
-  serverless API (`vercel.json` + `api/[...path].js` + `npm run build:api`); unknown routes and
-  cold-start failures return helpful JSON, never a bare platform 404.
+  static app with **no API at all** — and, once the API existed, `api/[...path].js` still only
+  matched a *single* path segment, so nested calls like `/api/chefs/sign-in` 404ed. The repo now
+  ships one flat Vercel function (`api/index.js`) that every `/api/*` path is rewritten to
+  (`vercel.json` + `npm run build:api`), with the original path carried through the rewrite; unknown
+  routes and cold-start failures return helpful JSON, never a bare platform 404.
 
 ### ✨ What's New Tab & In-App Recipe + YouTube Browser (V3.2)
 - **✨ What's New tab for every user** — accessible from the Welcome screen, top navigation bar, and Kitchen home with unread indicators and 1-tap feature launchers.
@@ -106,15 +108,20 @@ The first API start creates the database, runs migrations and seeds the built-in
 | `npm run db:seed` | Load built-in recipes into the shared catalogue |
 | `npm run db:reset` | Delete the local PGlite data and rebuild |
 | `npm run build:api` | Compile the API to `dist-server/` (used by the Vercel function) |
-| `npm test` | 91 tests: RLS isolation, scaling, aisles, importers, dish cascade, OCR, SSRF, full API |
+| `npm test` | 104 tests: RLS isolation, scaling, aisles, importers, dish cascade, OCR, SSRF, full API, Vercel routing |
 | `npm run typecheck` | Type-check app + server |
 
 ### ▲ Deploying to Vercel (static app + serverless API)
 
-The repo is deploy-ready: `vercel.json` builds the single-file app **and** compiles the API, and
-`api/[...path].js` runs the full Express server as one catch-all function — so `/api/search`,
-`/api/imports`, `/api/imports/ocr`, `/api/browser/*` etc. all work in production.
-**Deploying only the static build (no `api/` function) is what caused the “Something went wrong (404)” bug.**
+The repo is deploy-ready: `vercel.json` builds the single-file app **and** compiles the API into one
+flat function, `api/index.js`, which runs the full Express server. Every `/api/*` path reaches it
+through an explicit rewrite — `"/api/(.*)"` → `"/api?__path=/$1"` — because Vercel's file-system
+routing only supports *single-segment* parameters in `api/` (a `[...path].js` catch-all never matches
+`/api/chefs/sign-in` or `/api/recipes/:id`) and because a rewrite hands the function its destination
+URL, so the requested path is carried in `__path` and rebuilt in `server/vercel.ts` before Express
+routing. So `/api/search`, `/api/imports/ocr`, `/api/browser/*` etc. all work in production.
+**Deploying only the static build (no `api/` function) is what caused the “Something went wrong (404)” bug**;
+`npm run build` fails rather than ship a deployment whose API is missing or unroutable.
 
 - **Recommended:** set `DATABASE_URL` (Neon / Supabase / Vercel Postgres) + `DATABASE_SSL=true` in
   Vercel → Project → Settings → Environment Variables. Migrations + the 54 built-in recipes seed
