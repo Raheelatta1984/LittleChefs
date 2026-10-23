@@ -79,7 +79,7 @@ async function request<T>(
     // mysterious "Something went wrong (404).".
     const fallback =
       response.status === 404
-        ? "We couldn't reach the recipe kitchen server (404). The app's server may not be running or deployed yet — ask a grown-up to start it (`npm run dev:api`), then try again."
+        ? "The recipe kitchen isn't responding (404). On a computer, run `npm run dev` to start the app and kitchen together. If you're using the online app, its owner needs to deploy the API too."
         : response.status >= 500
           ? "The recipe kitchen server hiccupped. Wait a few seconds and try again."
           : `Something went wrong (${response.status}). Please try again.`;
