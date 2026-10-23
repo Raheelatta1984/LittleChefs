@@ -9,6 +9,7 @@ export const UNIT_WORDS = [
   "ounces", "ounce", "oz", "pounds", "pound", "lb", "lbs",
   "pieces", "piece", "pcs", "pc", "cloves", "clove", "slices", "slice", "cans", "can",
   "tins", "tin", "bunches", "bunch", "sprigs", "sprig", "stalks", "stalk", "heads", "head",
+  "bulbs", "bulb",
   "packets", "packet", "sheets", "sheet", "pinches", "pinch", "dashes", "dash",
   "handfuls", "handful", "scoops", "scoop", "drops", "drop", "sticks", "stick",
 ];
@@ -24,7 +25,8 @@ const UNIT_LOOKUP = new Map<string, string>([
   ["ounce", "oz"], ["ounces", "oz"], ["pound", "lb"], ["pounds", "lb"], ["lbs", "lb"],
   ["piece", "pieces"], ["pc", "pieces"], ["pcs", "pieces"], ["clove", "cloves"],
   ["slice", "slices"], ["can", "cans"], ["tin", "cans"], ["bunch", "bunches"],
-  ["sprig", "sprigs"], ["stalk", "stalks"], ["head", "heads"], ["packet", "packets"],
+  ["sprig", "sprigs"], ["stalk", "stalks"], ["head", "heads"], ["bulb", "bulbs"], ["bulbs", "bulbs"],
+  ["packet", "packets"],
   ["sheet", "sheets"], ["pinch", "pinches"], ["dash", "dashes"], ["handful", "handfuls"],
   ["scoop", "scoops"], ["drop", "drops"], ["stick", "sticks"], ["cup", "cups"],
 ]);
@@ -45,6 +47,8 @@ export function stripHtml(html: string): string {
     html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
       .replace(/<br\s*\/?>/gi, "\n")
       // Break BEFORE block elements too — otherwise nav/header text glues onto
       // the next heading ("English Urdu Ingredients:") and section detection fails.
@@ -116,25 +120,41 @@ function extractBracketedEnglish(itemText: string): { item: string; extraNote: s
 }
 
 const LEADING_QTY_RE =
-  /^([0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s+[0-9]+\s*\/\s*[0-9]+)?|[½¼¾⅓⅔⅛])(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?\s*(.*)$/;
+  /^([0-9]+\s*[½¼¾⅓⅔⅛]|[0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s+[0-9]+\s*\/\s*[0-9]+)?|[½¼¾⅓⅔⅛])(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?\s*(.*)$/;
 
 // Food Fusion style: the quantity (and unit) come at the END of the line —
 // "Kali mirch powder (Black pepper powder) 1 tsp", "Hari mirch 7-8", "Chicken 500g".
 const TRAILING_QTY_RE =
-  /^(.*\S)\s+([0-9]+\s+[0-9]+\s*\/\s*[0-9]+|[0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?|[½¼¾⅓⅔⅛](?:\s*[-–]\s*(?:[0-9]+(?:[.,][0-9]+)?|[½¼¾⅓⅔⅛]))?)\s*([a-zA-Z]+)?\.?\s*(?:or\s+to\s+taste|to\s+taste)?\s*$/i;
+  /^(.*\S)\s+([0-9]+\s*[½¼¾⅓⅔⅛]|[0-9]+\s+[0-9]+\s*\/\s*[0-9]+|[0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?|[½¼¾⅓⅔⅛](?:\s*[-–]\s*(?:[0-9]+(?:[.,][0-9]+)?|[½¼¾⅓⅔⅛]))?)\s*([a-zA-Z]+)?\.?\s*(?:or\s+to\s+taste|to\s+taste)?\s*$/i;
+
+const NUMBER_WORDS: Record<string, number> = {
+  half: 0.5, "a half": 0.5, "half a": 0.5, "half an": 0.5, "a quarter": 0.25,
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+
+function normalizeLeadingWordNumber(raw: string): string {
+  const match = raw.match(/^(half\s+an?|a\s+half|a\s+quarter|one|two|three|four|five|six|seven|eight|nine|ten)\s+(.*)$/i);
+  if (match) {
+    const val = NUMBER_WORDS[match[1].toLowerCase()];
+    if (val !== undefined) return `${val} ${match[2]}`;
+  }
+  return raw;
+}
 
 export function parseIngredientLine(line: string, position: number): Ingredient | null {
-  const raw = collapseRepeatedText(
+  const collapsed = collapseRepeatedText(
     decodeEntities(line)
       .replace(/^\s*(?:[-*•·–—]|\d+[.)])\s+/, "")
       .replace(/\s+/g, " ")
       .trim(),
   );
-  if (raw.length < 2) return null;
+  if (collapsed.length < 2) return null;
   // Page furniture (nutrition panels, review dates, "Copy text / Add to list"
   // buttons, prose paragraphs) must never become an ingredient — this single
   // guard covers every import path (JSON-LD, page text, YouTube, OCR, LLM).
-  if (!isLikelyIngredientLine(raw)) return null;
+  if (!isLikelyIngredientLine(collapsed)) return null;
+
+  const raw = normalizeLeadingWordNumber(collapsed);
 
   let quantity: number | null = null;
   let unit: string | null = null;
@@ -145,7 +165,7 @@ export function parseIngredientLine(line: string, position: number): Ingredient 
   if (match) {
     quantity = parseQuantity(match[1].replace(",", "."));
     rest = match[2] ?? "";
-    const unitMatch = rest.match(/^([a-zA-Z]+)\.?\s+(.*)$/);
+    const unitMatch = rest.match(/^([a-zA-Z]+)\.?\s+(?:of\s+)?(.*)$/);
     if (unitMatch) {
       const word = unitMatch[1].toLowerCase();
       // Plural units that are missing from the lookup ("2 cloves garlic").
@@ -153,6 +173,20 @@ export function parseIngredientLine(line: string, position: number): Ingredient 
       if (resolved) {
         unit = resolved;
         rest = unitMatch[2];
+      }
+    }
+    // Count-unit layout where unit follows item: "3 garlic cloves, crushed", "8 rosemary sprigs"
+    if (!unit) {
+      const countUnitMatch = rest.match(
+        /^([a-zA-Z\s]+?)\s+(cloves?|sprigs?|stalks?|slices?|pieces?|heads?|bulbs?)\b\.?\s*(?:,\s*(.*))?$/i,
+      );
+      if (countUnitMatch) {
+        const word = countUnitMatch[2].toLowerCase();
+        const resolved = UNIT_LOOKUP.get(word) ?? (word.endsWith("s") ? UNIT_LOOKUP.get(word.slice(0, -1)) : undefined);
+        if (resolved) {
+          unit = resolved;
+          rest = countUnitMatch[1].trim() + (countUnitMatch[3] ? `, ${countUnitMatch[3].trim()}` : "");
+        }
       }
     }
   } else {

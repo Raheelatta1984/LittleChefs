@@ -103,7 +103,7 @@ export function detectPageRecipe(
     return { draft: tidy, method: "jsonld", confidence: confidenceOf(tidy) };
   }
 
-  const cleaned = stripHtml(html).slice(0, 14_000);
+  const cleaned = stripHtml(html);
   // Tolerant section detection: headings may be glued onto site chrome after
   // stripping ("Home Recipes English Urdu Ingredients:"), which the old
   // line-anchored regex missed — Food Fusion pages then showed no recipe.

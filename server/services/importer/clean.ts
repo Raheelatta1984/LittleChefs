@@ -93,7 +93,7 @@ const PAGE_NOISE: RegExp[] = [
 
 /** Buttons and controls that sit around the recipe. */
 const UI_ACTION_WORDS =
-  /\b(?:print|print recipe|save recipe|save|add to list|add to cart|shop recipe|shop ingredients|copy text|copy|share this recipe|share|email|tweet|pin it|add to meal plan|jump to recipe|jump to video|read a review|read reviews|write a review|rate this recipe|rate|load more|show more|read more|see more|view all)\b/gi;
+  /\b(?:print|print recipe|save recipe|save|add to list|add to cart|shop recipe|shop ingredients|copy text|copy|share this recipe|share|email|tweet|pin it|add to meal plan|jump to recipe|jump to video|read a review|read reviews|write a review|rate this recipe|rate|load more|show more|read more|see more|view all|sold out|in stock|out of stock)\b/gi;
 
 const UI_LINE_PATTERNS: RegExp[] = [
   /^\d+\s+ingredients?$/i,
@@ -109,6 +109,7 @@ const UI_LINE_PATTERNS: RegExp[] = [
   /^(?:step|part)\s*\d+\s*(?:of|\/)\s*\d+$/i,
   /\bquantities above are a guide\b/i,
   /^[a-z ]{0,30}\s(?:m|mins?|minutes?|h|hrs?|hours?)$/i,
+  /^\$\d+(?:\.\d+)?(?:\s*ea)?(?:\s*\$\d+.*)?$/i,
 ];
 
 export function isUiChromeLine(line: string): boolean {
@@ -137,10 +138,10 @@ export function isPageNoiseLine(line: string): boolean {
  * ingredient/method scan stops there instead of swallowing it.
  */
 const STOP_HEADING_EXACT =
-  /^(?:nutrition(?:al)?(?: information| info)?(?: per serving)?|nutrition per serving|description|about(?: this recipe| the recipe)?|reviews?|ratings?|comments?|leave a (?:review|comment)|cost per serve|disclaimer|legal|notes?|chef'?s notes?|tips?|top tips|equipment|share(?: this(?: recipe)?)?|print(?: recipe)?|save(?: recipe)?|sponsored|advertisement|you (?:might|may) also like|related(?: recipes)?|more recipes|recommended(?: for you)?|recipe source|source)\s*:?\s*$/i;
+  /^(?:nutrition(?:al)?(?: information| info)?(?: per serving)?|nutrition per serving|description|about(?: this recipe| the recipe)?|reviews?|ratings?|comments?|leave a (?:review|comment)|cost per serve|disclaimer|legal|notes?|chef'?s notes?|tips?|top tips|equipment|share(?: this(?: recipe)?)?|print(?: recipe)?|save(?: recipe)?|sponsored|advertisement|you (?:might|may) also like|related(?: recipes)?|more recipes|new recipes|similar recipes|featured recipes|recommended(?: for you)?|recipe source|source|products|shop ingredients|your cart)\s*:?\s*$/i;
 
 const STOP_HEADING_PREFIX =
-  /^(?:nutrition(?:al)?(?: information| info)?\b|you (?:might|may) also like\b|related recipes\b|more recipes\b|cost per serve\b|disclaimer\b|reviews? and (?:recipe )?photos\b)/i;
+  /^(?:nutrition(?:al)?(?: information| info)?\b|you (?:might|may) also like\b|related recipes\b|more recipes\b|new recipes\b|similar recipes\b|featured recipes\b|cost per serve\b|disclaimer\b|reviews? and (?:recipe )?photos\b|ingredients for\b|shop (?:the )?(?:ingredients|recipe|products)\b|buy (?:the )?ingredients\b|products (?:for|in)\b|your cart\b|how would you like to shop\b|select a time\b|choose how you'd like to shop\b|find your local\b)/i;
 
 export function isSectionStopHeading(line: string): boolean {
   const text = line.replace(/\*\*/g, "").trim();

@@ -25,14 +25,37 @@ const STEP_HEADING_SUFFIX = new RegExp(String.raw`\b${STEP_WORDS}\s*:?\s*$`, "i"
 const TRANSLATION_BLOCK_START =
   /^(?:ajza|tarkeeb|tarika|recipe in (?:roman\s+)?urdu|roman urdu(?:\s+recipe)?|urdu recipe|हिंदी में)\b\s*:?\s*$/i;
 
-/** Group captions inside a block: "Prepare Balochi Tikka Boti:", "For the marinade:" … */
+const KNOWN_GROUP_NAMES = new Set([
+  "marinade", "roasting", "dressing", "to serve", "to garnish", "sauce", "filling",
+  "topping", "toppings", "crust", "base", "dough", "batter", "glaze", "garnish",
+  "garnishes", "salad", "syrup", "icing", "frosting", "rub", "dry rub", "seasoning",
+  "spice mix", "spice blend", "spices", "assembly", "pastry", "pasta dough", "for serving",
+]);
+
+/** Group captions inside a block: "Prepare Balochi Tikka Boti:", "For the marinade:", "Roasting", "Dressing" … */
 function groupHeadingOf(line: string): string | null {
-  const cleaned = line.replace(/\*\*/g, "").trim();
-  if (cleaned.length < 3 || cleaned.length > 60) return null;
-  if (/^(?:for the|for|prepare|to make|for making)\b/i.test(cleaned) && /:?\s*$/.test(cleaned)) {
+  const cleaned = line.replace(/\*\*/g, "").replace(/__/g, "").trim();
+  if (cleaned.length < 2 || cleaned.length > 50) return null;
+  // A group heading never contains quantities or numbers
+  if (/[\d½¼¾⅓⅔⅛]/.test(cleaned)) return null;
+
+  if (/^(?:for the|for|prepare|to make|for making|to serve|for serving)\b/i.test(cleaned)) {
     return cleaned.replace(/:\s*$/, "").trim() || null;
   }
-  if (/:\s*$/.test(cleaned) && !/^\d/.test(cleaned)) {
+  if (/:\s*$/.test(cleaned)) {
+    return cleaned.replace(/:\s*$/, "").trim() || null;
+  }
+  const lower = cleaned.toLowerCase().replace(/:\s*$/, "").trim();
+  if (KNOWN_GROUP_NAMES.has(lower)) {
+    return cleaned.replace(/:\s*$/, "").trim() || null;
+  }
+  // Short category label without commas or unscalable modifiers
+  if (
+    cleaned.length <= 35 &&
+    !/,/.test(cleaned) &&
+    !/\b(?:to taste|as needed|for frying|for cooking|optional)\b/i.test(cleaned) &&
+    cleaned.split(/\s+/).length <= 4
+  ) {
     return cleaned.replace(/:\s*$/, "").trim() || null;
   }
   return null;
@@ -44,8 +67,11 @@ function cleanLines(text: string): string[] {
     .split("\n")
     .map((line) =>
       line
+        .replace(/^\s*#{1,6}\s+/, "")
         .replace(/^\s*(?:[-*•·–—]\s*)+/, "")
         .replace(/^\s*\d{1,2}[.)]\s+/, (match) => match)
+        .replace(/\*\*/g, "")
+        .replace(/__/g, "")
         .replace(/\s+/g, " ")
         .trim(),
     );
@@ -74,9 +100,11 @@ export function findRecipeSections(rawText: string): { ingredients: number; step
 export type ParseReport = { skippedNoiseLines: number; collapsedDuplicates: number };
 
 function minutesFromLine(line: string): number | null {
-  const hours = line.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i);
-  const minutes = line.match(/(\d+)\s*(?:minutes?|mins?|min|m)\b/i);
-  const total = (hours ? Number(hours[1]) * 60 : 0) + (minutes ? Number(minutes[1]) : 0);
+  const hours = line.match(/(?:(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*)?(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i);
+  const minutes = line.match(/(?:(\d+)\s*(?:-|–|to)\s*)?(\d+)\s*(?:minutes?|mins?|min|m)\b/i);
+  const h = hours ? Number(hours[2] ?? hours[1]) : 0;
+  const m = minutes ? Number(minutes[2] ?? minutes[1]) : 0;
+  const total = h * 60 + m;
   return total > 0 ? Math.round(total) : null;
 }
 
@@ -121,12 +149,23 @@ export function detectServings(lines: string[]): number | null {
   return null;
 }
 
-/** Total time from explicit "Total time" lines, else prep + cook. */
+/** Total time from explicit "Total time" lines, else prep + cook (supports inline "Prep 15 mins | Cook 40 mins"). */
 export function detectTotalMinutes(lines: string[]): number | null {
   const total = firstLineMinutes(lines, /^\s*(?:total|overall)\b[^a-z]*(?:time)?\b/i);
   if (total) return total;
-  const prep = firstLineMinutes(lines, /^\s*prep(?:aration)?(?:\s*time)?\b/i);
-  const cook = firstLineMinutes(lines, /^\s*cook(?:ing)?(?:\s*time)?\b/i);
+  let prep: number | null = null;
+  let cook: number | null = null;
+  for (const line of lines) {
+    if (prep === null) {
+      const pMatch = line.match(/\bprep(?:aration)?(?:\s*time)?\s*[:\-]?\s*(.*?)(?=\bcook|$|\||,)/i);
+      if (pMatch) prep = minutesFromLine(pMatch[1]);
+    }
+    if (cook === null) {
+      const cMatch = line.match(/\bcook(?:ing)?(?:\s*time)?\s*[:\-]?\s*(.*?)(?=\bprep|$|\||,)/i);
+      if (cMatch) cook = minutesFromLine(cMatch[1]);
+    }
+    if (prep !== null && cook !== null) break;
+  }
   if (prep || cook) return (prep ?? 0) + (cook ?? 0) || null;
   return firstLineMinutes(lines, /(?:total|prep(?:aration)?|cook(?:ing)?)\s*time\s*[:\-]/i);
 }
