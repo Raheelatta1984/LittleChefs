@@ -6,7 +6,7 @@ const imageUrl = z
   .string()
   .trim()
   .max(2048)
-  .refine((value) => value === "" || /^(https?:\/\/|\/uploads\/|data:image\/)/i.test(value), {
+  .refine((value) => value === "" || /^(https?:\/\/|\/uploads\/|\/api\/uploads\/|data:image\/)/i.test(value), {
     message: "Images must be an http(s) link or an uploaded image.",
   })
   .nullable()
@@ -74,6 +74,12 @@ export const importSchema = z.object({
   inputType: z.enum(["url", "youtube", "text", "dish"]).optional(),
   allowAiFallback: z.boolean().optional(),
   draftHint: draftSchema.optional(),
+});
+
+export const ocrImportSchema = z.object({
+  /** data:image/…;base64,… — decoded size is checked against the upload cap. */
+  dataUrl: z.string().min(32).max(8_000_000),
+  title: z.string().trim().max(140).optional(),
 });
 
 export const confirmImportSchema = z.object({

@@ -1,6 +1,5 @@
 import type {
   BrowserPageResponse,
-  BrowserRecipeCard,
   BrowserYouTubeVideo,
   RecipeDraft,
 } from "../../shared/types.js";
@@ -8,21 +7,15 @@ import { ApiError } from "../lib/errors.js";
 import { safeFetchPage, normaliseUrl } from "./importer/fetch.js";
 import { extractJsonLdRecipe, extractPageFallback } from "./importer/jsonld.js";
 import { confidenceOf, decodeEntities, stripHtml } from "./importer/parse.js";
-import { parseRecipeFromText } from "./importer/text.js";
+import { findRecipeSections, parseRecipeFromText } from "./importer/text.js";
 import { tidyDraft } from "./importer/index.js";
 import { fetchYouTubeMeta, youtubeVideoId } from "./importer/youtube.js";
+import { extractRecipeLinks } from "./importer/links.js";
+
+export { extractRecipeLinks, rankCardsForDish } from "./importer/links.js";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-
-const NOISE_PATH_RE =
-  /\/(?:wp-login|wp-admin|login|signin|sign-in|register|signup|cart|checkout|account|privacy|terms|cookie|contact|about-us|advertise|feed|rss|tag|author|wp-json|xmlrpc)(?:\/|$|\?)/i;
-
-const SOCIAL_HOST_RE =
-  /(?:^|\.)(?:facebook\.com|instagram\.com|twitter\.com|x\.com|pinterest\.com|tiktok\.com|linkedin\.com|whatsapp\.com|t\.me|play\.google\.com|apps\.apple\.com)$/i;
-
-const RECIPE_HINT_RE =
-  /\b(?:recipe|recipes|cook|bake|biryani|chicken|pasta|cake|curry|soup|salad|bread|rice|paneer|masala|noodles|pizza|burger|cookies|brownie|dessert|stew|fry|roast|grill|sauce|tacos|pancake|halwa|karahi|nihari|pulao|kebab|kabab|samosa|dal|daal)\b/i;
 
 function escapeHtmlAttr(value: string): string {
   return value
@@ -32,57 +25,6 @@ function escapeHtmlAttr(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function unwrapSearchRedirect(rawHref: string, baseUrl: string): string | null {
-  try {
-    const resolved = new URL(decodeEntities(rawHref.trim()), baseUrl);
-    if (!["http:", "https:"].includes(resolved.protocol)) return null;
-    const host = resolved.hostname.toLowerCase();
-    // Unwrap DuckDuckGo /l/?uddg=... and Google /url?q=... result wrappers.
-    if (host.endsWith("duckduckgo.com") && resolved.pathname.startsWith("/l/")) {
-      const target = resolved.searchParams.get("uddg");
-      if (target && /^https?:\/\//i.test(target)) return target;
-    }
-    if ((host.endsWith("google.com") || host.endsWith("google.com.au")) && resolved.pathname === "/url") {
-      const target = resolved.searchParams.get("q") ?? resolved.searchParams.get("url");
-      if (target && /^https?:\/\//i.test(target)) return target;
-    }
-    resolved.hash = "";
-    return resolved.toString();
-  } catch {
-    return null;
-  }
-}
-
-function extractFirstImgUrl(fragment: string, baseUrl: string): string | null {
-  const imgTag = fragment.match(/<img\b[^>]*>/i)?.[0];
-  if (!imgTag) return null;
-  const attrs = ["data-lazy-src", "data-src", "src"];
-  for (const attr of attrs) {
-    const match = imgTag.match(new RegExp(`\\b${attr}=["']([^"']+)["']`, "i"));
-    const candidate = match?.[1]?.trim();
-    if (candidate && !candidate.startsWith("data:image/svg") && !/1x1|pixel|blank|avatar|logo/i.test(candidate)) {
-      try {
-        const resolved = new URL(decodeEntities(candidate), baseUrl);
-        if (["http:", "https:"].includes(resolved.protocol)) return resolved.toString();
-      } catch {
-        continue;
-      }
-    }
-  }
-  const srcset = imgTag.match(/\bsrcset=["']([^"']+)["']/i)?.[1];
-  if (srcset) {
-    const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
-    if (first) {
-      try {
-        const resolved = new URL(decodeEntities(first), baseUrl);
-        if (["http:", "https:"].includes(resolved.protocol)) return resolved.toString();
-      } catch {
-        // ignore bad srcset
-      }
-    }
-  }
-  return null;
-}
 
 /**
  * Sanitizes fetched HTML for safe rendering inside a sandboxed `<iframe sandbox="allow-scripts" srcDoc={...}>`.
@@ -149,113 +91,6 @@ export function sanitizeHtmlForPreview(html: string, finalUrl: string): string {
   return `<!doctype html><html><head>${bridgeHead}</head><body>${withoutDangerousBlocks}</body></html>`;
 }
 
-/** Extracts recipe cards and navigable article links from a chef website or search results page. */
-export function extractRecipeLinks(html: string, baseUrl: string): BrowserRecipeCard[] {
-  let baseHost = "";
-  try {
-    baseHost = new URL(baseUrl).hostname.replace(/^www\./i, "").toLowerCase();
-  } catch {
-    baseHost = "";
-  }
-  const normalisedSelf = unwrapSearchRedirect(baseUrl, baseUrl) ?? baseUrl;
-  const seen = new Set<string>([normalisedSelf.replace(/\/$/, "")]);
-  const cards: Array<BrowserRecipeCard & { score: number }> = [];
-
-  const pushCandidate = (rawUrl: string, titleText: string, snippetText: string | null, imageUrl: string | null, fromArticle: boolean) => {
-    const resolved = unwrapSearchRedirect(rawUrl, baseUrl);
-    if (!resolved) return;
-    const key = resolved.replace(/\/$/, "");
-    if (seen.has(key)) return;
-
-    let parsed: URL;
-    try {
-      parsed = new URL(resolved);
-    } catch {
-      return;
-    }
-    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
-    if (SOCIAL_HOST_RE.test(host)) return;
-    if (NOISE_PATH_RE.test(parsed.pathname)) return;
-    if (/\.(?:jpg|jpeg|png|gif|webp|svg|pdf|zip|css|js)$/i.test(parsed.pathname)) return;
-    if (parsed.pathname === "/" && !parsed.search) return;
-
-    const cleanTitle = decodeEntities(stripHtml(titleText)).replace(/\s+/g, " ").trim();
-    if (cleanTitle.length < 4 || cleanTitle.length > 180) return;
-    if (/^(?:read more|view recipe|learn more|home|menu|next|previous|page \d+|search|skip to content|log ?in|sign ?up|privacy policy)$/i.test(cleanTitle)) {
-      return;
-    }
-
-    seen.add(key);
-
-    const pathSegments = parsed.pathname.split("/").filter(Boolean);
-    const hasRecipeSlug =
-      /recipe|recipes|dish|cook|food|meal/i.test(parsed.pathname) ||
-      RECIPE_HINT_RE.test(cleanTitle);
-    const isYoutubeWatch = Boolean(youtubeVideoId(resolved));
-    const isLikelyRecipe = Boolean(
-      isYoutubeWatch ||
-      hasRecipeSlug ||
-      (fromArticle && pathSegments.length >= 1) ||
-      (imageUrl && pathSegments.length >= 1),
-    );
-
-    let score = 0;
-    if (isLikelyRecipe) score += 5;
-    if (fromArticle) score += 3;
-    if (imageUrl) score += 3;
-    if (RECIPE_HINT_RE.test(cleanTitle)) score += 2;
-    if (host === baseHost) score += 1;
-    if (pathSegments.length >= 1 && pathSegments[pathSegments.length - 1].includes("-")) score += 2;
-
-    const cleanSnippet = snippetText
-      ? decodeEntities(stripHtml(snippetText)).replace(/\s+/g, " ").trim().slice(0, 180) || null
-      : null;
-
-    cards.push({
-      url: resolved,
-      title: cleanTitle,
-      snippet: cleanSnippet && cleanSnippet.toLowerCase() !== cleanTitle.toLowerCase() ? cleanSnippet : null,
-      imageUrl,
-      siteName: host || null,
-      isLikelyRecipe,
-      score,
-    });
-  };
-
-  // Pass 1: <article> cards (WordPress recipe themes like Food Fusion, Ranveer Brar, Cakes by MK, etc.)
-  const articleBlocks = html.match(/<article\b[\s\S]*?<\/article>/gi) ?? [];
-  for (const block of articleBlocks.slice(0, 60)) {
-    const headingLink =
-      block.match(/<h[1-4][^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h[1-4]>/i) ??
-      block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>[\s\S]*?<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>[\s\S]*?<\/a>/i);
-    const anyLinks = [...block.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
-    const chosen =
-      headingLink ??
-      anyLinks.find((m) => decodeEntities(stripHtml(m[2])).trim().length >= 5);
-    if (!chosen) continue;
-    const img = extractFirstImgUrl(block, baseUrl);
-    const para = block.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? null;
-    pushCandidate(chosen[1], chosen[2], para, img, true);
-  }
-
-  // Pass 2: General anchor scan across search results / category grids
-  const anchorMatches = [...html.matchAll(/<a\b([^>]*?)href=["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi)];
-  for (const match of anchorMatches.slice(0, 250)) {
-    const attrs = `${match[1]} ${match[3]}`;
-    const href = match[2];
-    const inner = match[4];
-    const ariaTitle =
-      attrs.match(/\b(?:aria-label|title)=["']([^"']+)["']/i)?.[1] ?? "";
-    const textContent = stripHtml(inner).trim() || ariaTitle;
-    const img = extractFirstImgUrl(inner, baseUrl);
-    pushCandidate(href, textContent, null, img, false);
-  }
-
-  return cards
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 24)
-    .map(({ score: _score, ...card }) => card);
-}
 
 /** Detects whether a single loaded webpage already holds a structured recipe ready to import. */
 export function detectPageRecipe(
@@ -269,9 +104,11 @@ export function detectPageRecipe(
   }
 
   const cleaned = stripHtml(html).slice(0, 14_000);
-  const hasExplicitSections =
-    /(?:^|\n)\s*(?:🛒\s*)?(?:ingredients?|you(?:'| wi)ll need|what you need)\s*:?\s*(?:\n|$)/i.test(cleaned) &&
-    /(?:^|\n)\s*(?:👩‍🍳\s*)?(?:method|instructions?|directions?|steps?|preparation|how to (?:make|cook))\s*:?\s*(?:\n|$)/i.test(cleaned);
+  // Tolerant section detection: headings may be glued onto site chrome after
+  // stripping ("Home Recipes English Urdu Ingredients:"), which the old
+  // line-anchored regex missed — Food Fusion pages then showed no recipe.
+  const sections = findRecipeSections(cleaned);
+  const hasExplicitSections = sections.ingredients >= 0 && sections.steps > sections.ingredients;
 
   if (hasExplicitSections) {
     const fallbackMeta = extractPageFallback(html, pageUrl);

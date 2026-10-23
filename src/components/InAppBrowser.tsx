@@ -1032,7 +1032,8 @@ export function InAppBrowser({
             <div className="rounded-2xl bg-amber-50 p-3 text-xs font-bold text-amber-900 ring-1 ring-amber-200">
               <p>ℹ️ {error}</p>
               <p className="mt-1 font-semibold text-amber-800">
-                You can pick any verified in-app recipe &amp; video match below, try another search above, or paste recipe text with{" "}
+                No worries — the same recipe is usually on YouTube with the full ingredients in the video
+                description. You can also pick any verified in-app match below, or paste recipe text with{" "}
                 <button
                   type="button"
                   onClick={() => setShowPasteBox(true)}
@@ -1042,6 +1043,34 @@ export function InAppBrowser({
                 </button>
                 .
               </p>
+              {tab !== "youtube" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playPop();
+                    pushNavigation("youtube", `${chefContext?.name ? `${chefContext.name} ` : ""}${dishHint} recipe`);
+                  }}
+                  className="mt-2 w-full rounded-xl bg-gradient-to-r from-red-500 to-rose-500 py-2.5 text-xs font-black text-white shadow transition active:scale-95"
+                >
+                  ▶️ Search YouTube for “{dishHint}” instead (recipe&apos;s in the description!)
+                </button>
+              )}
+            </div>
+          )}
+
+          {!loading && !error && page?.kind === "website" && !page.detectedRecipe && page.links.length === 0 && companionDrafts.length === 0 && (
+            <div className="rounded-2xl bg-sky-50 p-3 text-xs font-bold text-sky-900 ring-1 ring-sky-200">
+              <p>🔍 We couldn&apos;t spot a full recipe on this page. The same dish is usually on YouTube — and the ingredients live in the video description!</p>
+              <button
+                type="button"
+                onClick={() => {
+                  playPop();
+                  pushNavigation("youtube", `${chefContext?.name ? `${chefContext.name} ` : ""}${dishHint} recipe`);
+                }}
+                className="mt-2 w-full rounded-xl bg-gradient-to-r from-red-500 to-rose-500 py-2.5 text-xs font-black text-white shadow transition active:scale-95"
+              >
+                ▶️ Find “{dishHint}” on YouTube
+              </button>
             </div>
           )}
 

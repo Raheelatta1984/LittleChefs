@@ -2,7 +2,7 @@ import type { Ingredient, RecipeDraft, Step } from "../../../shared/types.js";
 import { parseQuantity } from "../scaling.js";
 
 export const UNIT_WORDS = [
-  "cups", "cup", "tablespoons", "tablespoon", "tbsp", "teaspoons", "teaspoon", "tsp",
+  "cups", "cup", "tablespoons", "tablespoon", "tbsp", "tbs", "teaspoons", "teaspoon", "tsp",
   "kilograms", "kilogram", "kg", "grams", "gram", "g", "millilitres", "millilitre",
   "milliliters", "milliliter", "ml", "litres", "litre", "liters", "liter", "l",
   "ounces", "ounce", "oz", "pounds", "pound", "lb", "lbs",
@@ -14,7 +14,8 @@ export const UNIT_WORDS = [
 
 const UNIT_LOOKUP = new Map<string, string>([
   ["g", "g"], ["kg", "kg"], ["mg", "mg"], ["ml", "ml"], ["l", "l"],
-  ["oz", "oz"], ["lb", "lb"], ["tbsp", "tbsp"], ["tsp", "tsp"], ["cup", "cups"], ["cups", "cups"],
+  ["oz", "oz"], ["lb", "lb"], ["tbsp", "tbsp"], ["tbs", "tbsp"], ["tsp", "tsp"], ["cup", "cups"], ["cups", "cups"],
+  ["gm", "g"], ["gms", "g"], ["kgs", "kg"], ["tsps", "tsp"], ["tbsps", "tbsp"],
   ["tablespoon", "tbsp"], ["tablespoons", "tbsp"], ["teaspoon", "tsp"], ["teaspoons", "tsp"],
   ["kilogram", "kg"], ["kilograms", "kg"], ["gram", "g"], ["grams", "g"],
   ["millilitre", "ml"], ["millilitres", "ml"], ["milliliter", "ml"], ["milliliters", "ml"],
@@ -44,6 +45,9 @@ export function stripHtml(html: string): string {
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<br\s*\/?>/gi, "\n")
+      // Break BEFORE block elements too — otherwise nav/header text glues onto
+      // the next heading ("English Urdu Ingredients:") and section detection fails.
+      .replace(/(?=<(?:p|div|li|h[1-6]|section|article|tr|blockquote|pre|nav|header|footer)[\s>])/gi, "\n")
       .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
       .replace(/<[^>]+>/g, " "),
   )
@@ -72,6 +76,52 @@ function splitTopLevel(text: string): string[] {
   return parts;
 }
 
+/**
+ * Roman-Urdu / Hindi ingredient-name words. Sites like Food Fusion write
+ * "Sabut dhania (Coriander seeds) ½ tbs" — local name first, English in
+ * brackets, quantity LAST. When the bracket form is detected we prefer the
+ * English name as the item (shopping aisles + scaling work far better) and
+ * keep the full original line in rawText.
+ */
+const ROMAN_URDU_WORDS = new Set([
+  "sabut", "dhania", "lal", "mirch", "mirchi", "zeera", "kali", "namak", "kasuri", "qasuri",
+  "hari", "hara", "adrak", "lehsan", "lahsun", "dahi", "podina", "kala", "pyaz", "piyaz",
+  "aloo", "gajar", "haldi", "ajwain", "saunf", "sonf", "elaichi", "dalchini", "laung",
+  "maida", "atta", "besan", "chawal", "gosht", "murghi", "machli", "tamatar", "nimbu",
+  "tatri", "methi", "sarson", "moong", "chana", "masoor", "arhar", "rajma", "katori",
+]);
+
+function capitalise(value: string): string {
+  const trimmed = value.trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : trimmed;
+}
+
+/**
+ * "Sabut dhania (Coriander seeds) roasted & crushed" →
+ * item "Coriander seeds", extraNote "roasted & crushed".
+ * Only swaps when the pre-bracket name contains a Roman-Urdu word, so plain
+ * English lines like "flour (all-purpose)" are left untouched.
+ */
+function extractBracketedEnglish(itemText: string): { item: string; extraNote: string | null } {
+  const match = itemText.match(/^(.+?)\s*\(([^)]{3,60})\)\s*(.*)$/);
+  if (!match) return { item: itemText, extraNote: null };
+  const [, before, inside, after] = match;
+  const beforeWords = before.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const looksLocal = beforeWords.some((word) => ROMAN_URDU_WORDS.has(word));
+  if (!looksLocal || /^\d/.test(inside.trim()) || !/[a-z]/i.test(inside)) {
+    return { item: itemText, extraNote: null };
+  }
+  return { item: capitalise(inside), extraNote: after.trim() || null };
+}
+
+const LEADING_QTY_RE =
+  /^([0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s+[0-9]+\s*\/\s*[0-9]+)?|[½¼¾⅓⅔⅛])(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?\s*(.*)$/;
+
+// Food Fusion style: the quantity (and unit) come at the END of the line —
+// "Kali mirch powder (Black pepper powder) 1 tsp", "Hari mirch 7-8", "Chicken 500g".
+const TRAILING_QTY_RE =
+  /^(.*\S)\s+([0-9]+\s+[0-9]+\s*\/\s*[0-9]+|[0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?|[½¼¾⅓⅔⅛](?:\s*[-–]\s*(?:[0-9]+(?:[.,][0-9]+)?|[½¼¾⅓⅔⅛]))?)\s*([a-zA-Z]+)?\.?\s*(?:or\s+to\s+taste|to\s+taste)?\s*$/i;
+
 export function parseIngredientLine(line: string, position: number): Ingredient | null {
   const raw = decodeEntities(line)
     .replace(/^\s*(?:[-*•·–—]|\d+[.)])\s+/, "")
@@ -79,30 +129,46 @@ export function parseIngredientLine(line: string, position: number): Ingredient 
     .trim();
   if (raw.length < 2) return null;
 
-  // Order matters: a plain fraction ("1/4 tsp") must win over the whole number "1".
-  const match = raw.match(
-    /^([0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s+[0-9]+\s*\/\s*[0-9]+)?|[½¼¾⅓⅔⅛])(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?\s*(.*)$/,
-  );
-
   let quantity: number | null = null;
+  let unit: string | null = null;
   let rest = raw;
+
+  // Order matters: a plain fraction ("1/4 tsp") must win over the whole number "1".
+  const match = raw.match(LEADING_QTY_RE);
   if (match) {
     quantity = parseQuantity(match[1].replace(",", "."));
     rest = match[2] ?? "";
-  }
-
-  let unit: string | null = null;
-  const unitMatch = rest.match(/^([a-zA-Z]+)\.?\s+(.*)$/);
-  if (unitMatch && UNIT_LOOKUP.has(unitMatch[1].toLowerCase())) {
-    unit = UNIT_LOOKUP.get(unitMatch[1].toLowerCase()) ?? null;
-    rest = unitMatch[2];
+    const unitMatch = rest.match(/^([a-zA-Z]+)\.?\s+(.*)$/);
+    if (unitMatch && UNIT_LOOKUP.has(unitMatch[1].toLowerCase())) {
+      unit = UNIT_LOOKUP.get(unitMatch[1].toLowerCase()) ?? null;
+      rest = unitMatch[2];
+    }
+  } else {
+    // No leading quantity — try the trailing-quantity layout. The trailing
+    // word after the number must be a known unit (or absent), so step-like
+    // lines ("cook for 2 minutes") are never mistaken for ingredients.
+    const trailing = raw.match(TRAILING_QTY_RE);
+    if (trailing) {
+      const trailingUnit = trailing[3]?.toLowerCase();
+      if (!trailingUnit || UNIT_LOOKUP.has(trailingUnit)) {
+        const parsed = parseQuantity(trailing[2].replace(",", "."));
+        if (parsed !== null && parsed > 0 && parsed < 100_000) {
+          quantity = parsed;
+          unit = trailingUnit ? (UNIT_LOOKUP.get(trailingUnit) ?? null) : null;
+          rest = trailing[1].trim();
+        }
+      }
+    }
   }
 
   const segments = splitTopLevel(rest).map((segment) => segment.trim()).filter(Boolean);
   const [itemPart, ...noteParts] = segments.length > 0 ? segments : [""];
-  const item = (itemPart ?? "").trim();
-  if (!item) return null;
-  const prepNote = noteParts.join(", ").trim() || null;
+  const rawItem = (itemPart ?? "").trim().replace(/:\s*$/, "");
+  if (!rawItem) return null;
+
+  const { item, extraNote } = extractBracketedEnglish(rawItem);
+  const notes = [extraNote, ...noteParts].filter(Boolean) as string[];
+  const prepNote = notes.join(", ").trim() || null;
 
   const unscalable = /to taste|as needed|for garnish|optional/i.test(raw);
   return {

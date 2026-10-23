@@ -830,7 +830,7 @@ export default function App() {
             setImporterAllowFallback(false);
             setImporterDraftHint(null);
           }}
-          onOpenBrowser={(q) => openInternalBrowser({ query: q || foodQuery, tab: "website" })}
+          onOpenBrowser={(q, tab) => openInternalBrowser({ query: q || foodQuery, tab: tab ?? "website" })}
           onSaved={(saved) => {
             setShowImporter(false);
             setImporterAutoStart(false);

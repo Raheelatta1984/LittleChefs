@@ -321,7 +321,7 @@ describe("media uploads", () => {
       body: { dataUrl: png },
     });
     assert.equal(uploaded.status, 201);
-    assert.match(uploaded.body.url, /^\/uploads\/.+\.png$/);
+    assert.match(uploaded.body.url, /^\/api\/uploads\/.+\.png$/);
 
     const fetched = await fetch(`${server.base.replace(/\/api$/, "")}${uploaded.body.url}`);
     assert.equal(fetched.status, 200);

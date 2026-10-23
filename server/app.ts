@@ -11,8 +11,12 @@ import { importRoutes } from "./routes/import.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { browserRoutes } from "./routes/browser.js";
+import type { ImportRouteDeps } from "./routes/import.js";
 
-export function createApp(db: Database): express.Express {
+/** Injectable externals (network + OCR) — production uses the real ones. */
+export type AppDeps = ImportRouteDeps;
+
+export function createApp(db: Database, deps: AppDeps = {}): express.Express {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
@@ -54,12 +58,17 @@ export function createApp(db: Database): express.Express {
   app.use("/api", authRoutes(db));
   app.use("/api", catalogueRoutes(db));
   app.use("/api", recipeRoutes(db));
-  app.use("/api", importRoutes(db));
-  app.use("/api", browserRoutes());
+  app.use("/api", importRoutes(db, deps));
+  app.use("/api", browserRoutes(deps));
   app.use("/api", uploadRoutes(db));
 
-  // Locally uploaded photos.
+  // Locally uploaded photos. Served under /api/uploads so single-function
+  // deployments (Vercel api/[...path]) can serve them too; the legacy
+  // /uploads mount keeps previously saved photo links working locally.
   app.use(config.uploads.publicPath, express.static(config.uploads.dir, { maxAge: "7d" }));
+  if ((config.uploads.publicPath as string) !== "/uploads") {
+    app.use("/uploads", express.static(config.uploads.dir, { maxAge: "7d" }));
+  }
 
   // Serve the built single-file app when it exists (npm run build && npm start).
   const dist = resolve(process.cwd(), "dist");
