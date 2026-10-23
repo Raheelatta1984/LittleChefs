@@ -430,6 +430,21 @@ export const FAMOUS_CHEFS: FamousChef[] = [
   },
   // --- Australia & global ---
   {
+    id: "harris-farm",
+    name: "Harris Farm Markets",
+    countryLabel: "Australia",
+    flag: "🇦🇺",
+    emoji: "🥑",
+    regions: ["australia"],
+    cuisines: ["Australian", "Italian", "Mediterranean", "Asian"],
+    specialty: "Fresh seasonal recipes, roast dinners, pastas, salads & baking",
+    fame: 8,
+    websiteDomain: "harrisfarm.com.au",
+    websiteSearchTemplate: "https://www.harrisfarm.com.au/search?q={query}&type=article,page",
+    youtubeSearchName: "Harris Farm Markets",
+    dishKeywords: ["chicken", "roast", "salad", "pasta", "soup", "tart", "potatoes", "steak", "mango"],
+  },
+  {
     id: "recipetin-eats",
     name: "RecipeTin Eats",
     countryLabel: "Australia",

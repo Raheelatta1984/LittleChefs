@@ -290,7 +290,7 @@ export async function importRecipe(
     draft = jsonld;
   } else {
     const fallback = extractPageFallback(page.html, page.url);
-    const pageText = stripHtml(page.html).slice(0, 14_000);
+    const pageText = stripHtml(page.html);
     const heuristic = parseRecipeFromText(pageText, {
       title: fallback.title ?? titleFromUrl(page.url),
       sourceUrl: page.url,
@@ -303,7 +303,7 @@ export async function importRecipe(
 
     if (options.useLlm !== false && llmConfigured() && confidenceOf(draft) < 0.8) {
       const llm = await structureWithLlm({
-        text: pageText,
+        text: pageText.slice(0, 18_000),
         title: fallback.title,
         sourceUrl: page.url,
         sourceType: "web",
