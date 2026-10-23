@@ -85,10 +85,10 @@ So the same dish is never imported twice, yet no chef can see another chef's boo
 npm install
 
 # terminal 1 — API + PostgreSQL (embedded PGlite, no Docker needed)
-npm run dev:api        # http://localhost:8787
+npm run dev            # starts the API + web app together; open http://localhost:5173
 
-# terminal 2 — web app (proxies /api → 8787)
-npm run dev            # http://localhost:5173
+# Optional: run only the API in a separate terminal
+npm run dev:api        # http://localhost:8787
 ```
 
 The first API start creates the database, runs migrations and seeds the built-in recipes.
@@ -98,7 +98,7 @@ The first API start creates the database, runs migrations and seeds the built-in
 
 | Script | What it does |
 |---|---|
-| `npm run dev` | Vite web app (proxies `/api` and `/uploads` to the API) |
+| `npm run dev` | Starts the API and Vite web app together; Vite proxies `/api` and `/uploads` to the API |
 | `npm run dev:api` | API server with watch mode on port 8787 |
 | `npm run build` | Production build → one self-contained `dist/index.html` |
 | `npm run server` / `npm start` | API server (also serves `dist/` when built) |

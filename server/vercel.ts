@@ -16,6 +16,16 @@ import { seedBuiltinCatalogue } from "./db/seed.js";
 
 let appPromise: Promise<express.Express> | null = null;
 
+/** Vercel may pass a catch-all function the path with or without its `/api` prefix. */
+export function normalizeApiRequestUrl(url: string | undefined): string {
+  const requestUrl = url || "/";
+  const queryIndex = requestUrl.indexOf("?");
+  const pathname = queryIndex < 0 ? requestUrl : requestUrl.slice(0, queryIndex);
+  const query = queryIndex < 0 ? "" : requestUrl.slice(queryIndex);
+  if (pathname === "/api" || pathname.startsWith("/api/")) return requestUrl;
+  return `/api${pathname.startsWith("/") ? pathname : `/${pathname}`}${query}`;
+}
+
 function getApp(): Promise<express.Express> {
   if (!appPromise) {
     appPromise = (async () => {
@@ -37,6 +47,9 @@ function getApp(): Promise<express.Express> {
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
     const app = await getApp();
+    // Keep Express route mounts consistent whether the platform preserves the
+    // `/api` prefix or supplies only the path after the catch-all function.
+    req.url = normalizeApiRequestUrl(req.url);
     app(req, res);
   } catch (error) {
     console.error("[api] failed to start", error);
