@@ -21,7 +21,7 @@ export type Recipe = {
   chefYouTubeSearchUrl?: string;
 };
 
-const recipeBook: Record<string, Recipe> = {
+export const recipeBook: Record<string, Recipe> = {
   pancake: {
     name: "Fluffy Pancakes",
     emoji: "🥞",

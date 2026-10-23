@@ -13,8 +13,28 @@ import { RewardsHub } from "./components/RewardsHub";
 import { InteractiveCookingWidget } from "./components/InteractiveWidget";
 import { AvatarButton, CSSCharacter } from "./components/CSSCharacter";
 import { playDing, playPop, playSuccess, speakText, stopSpeaking } from "./utils/audio";
+import { api, ApiClientError, loadAuth, saveAuth, type AuthState } from "./lib/api";
+import { viewToLegacy } from "./lib/adapters";
+import { ChefGate } from "./components/ChefGate";
+import { MyRecipes } from "./components/MyRecipes";
+import { DbRecipeDetail } from "./components/DbRecipeDetail";
+import { RecipeImporter } from "./components/RecipeImporter";
+import { OnboardingFlow } from "./components/OnboardingFlow";
+import { InternalMatches } from "./components/InternalMatches";
+import type {
+  ChefProfile, OnboardingResult, RecipeView, SearchResponse,
+} from "../shared/types";
 
-type Screen = "welcome" | "kitchen" | "recipe" | "cooking" | "done" | "rewards";
+type Screen =
+  | "welcome"
+  | "kitchen"
+  | "recipe"
+  | "cooking"
+  | "done"
+  | "rewards"
+  | "myRecipes"
+  | "dbRecipe"
+  | "onboarding";
 
 type WelcomeCharacter = {
   id: string;
@@ -91,7 +111,23 @@ export default function App() {
   const [showHonestyModal, setShowHonestyModal] = useState(false);
   const [lastEarnedPoints, setLastEarnedPoints] = useState(false);
 
-  const chefName = name.trim() || "Little Chef";
+  // --- Private kitchen (Postgres-backed, role scoped) ---
+  const [auth, setAuth] = useState<AuthState | null>(loadAuth);
+  const chef: ChefProfile | null = auth?.chef ?? null;
+  const [showChefGate, setShowChefGate] = useState(false);
+  const [myRecipes, setMyRecipes] = useState<RecipeView[]>([]);
+  const [myRecipesLoading, setMyRecipesLoading] = useState(false);
+  const [myRecipesError, setMyRecipesError] = useState<string | null>(null);
+  const [dbRecipe, setDbRecipe] = useState<RecipeView | null>(null);
+  const [deletingRecipe, setDeletingRecipe] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [showImporter, setShowImporter] = useState(false);
+  const [importerQuery, setImporterQuery] = useState("");
+  const [onboardingRecipe, setOnboardingRecipe] = useState<RecipeView | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const chefName = name.trim() || chef?.displayName || "Little Chef";
 
   const progress = useMemo(() => {
     if (!recipe) return 0;
@@ -135,14 +171,141 @@ export default function App() {
     navigate("kitchen");
   }
 
-  // --- AI Smart Search (the ONLY search) ---
-  function openFinder(prefill: string) {
+  // --- Internal-first search, then AI ---
+  async function openFinder(prefill: string) {
     playPop();
     setFinderQuery(prefill);
     setFinderMode("search");
     setFinderRejectedRecipe(undefined);
     setFinderRejectedMealId(undefined);
+
+    if (chef && prefill.trim().length > 1) {
+      try {
+        const result = await api.search(auth!.token, prefill.trim());
+        setSearchResult(result);
+        return;
+      } catch {
+        // API unreachable — fall back to the online finder below
+      }
+    }
     setShowSmartFinder(true);
+  }
+
+  function openOnlineFinder() {
+    setSearchResult(null);
+    setFinderMode("search");
+    setShowSmartFinder(true);
+  }
+
+  async function refreshMyRecipes() {
+    if (!auth) return;
+    setMyRecipesLoading(true);
+    setMyRecipesError(null);
+    try {
+      setMyRecipes(await api.listRecipes(auth.token));
+    } catch (error) {
+      setMyRecipesError(
+        error instanceof ApiClientError ? error.message : "Could not open your recipe book.",
+      );
+    } finally {
+      setMyRecipesLoading(false);
+    }
+  }
+
+  async function handleAuthed(next: AuthState) {
+    saveAuth(next);
+    setAuth(next);
+    setShowChefGate(false);
+    setPlayer((p) => ({ ...p, points: next.chef.points }));
+    setNotice(`Welcome back, ${next.chef.roleEmoji} ${next.chef.displayName}! Your private kitchen is open.`);
+    window.setTimeout(() => setNotice(null), 5000);
+    try {
+      setMyRecipes(await api.listRecipes(next.token));
+    } catch {
+      /* the book loads again when opened */
+    }
+  }
+
+  async function signOut() {
+    if (auth) {
+      try {
+        await api.signOut(auth.token);
+      } catch {
+        /* ignore */
+      }
+    }
+    saveAuth(null);
+    setAuth(null);
+    setMyRecipes([]);
+    setDbRecipe(null);
+    setShowChefGate(false);
+    setNotice("Signed out. Your recipes stay safely in your own kitchen.");
+    window.setTimeout(() => setNotice(null), 5000);
+  }
+
+  async function openDbRecipe(id: string) {
+    if (!auth) return;
+    try {
+      const found = await api.getRecipe(auth.token, id);
+      setDbRecipe(found);
+      setSearchResult(null);
+      playSuccess();
+      navigate("dbRecipe");
+    } catch (error) {
+      setMyRecipesError(error instanceof ApiClientError ? error.message : "Could not open that recipe.");
+    }
+  }
+
+  async function claimShared(catalogueId: string) {
+    if (!auth) return;
+    setClaimingId(catalogueId);
+    try {
+      const { recipe } = await api.claim(auth.token, catalogueId);
+      setSearchResult(null);
+      setDbRecipe(recipe);
+      playSuccess();
+      navigate("dbRecipe");
+      void refreshMyRecipes();
+    } catch (error) {
+      setMyRecipesError(error instanceof ApiClientError ? error.message : "Could not copy that recipe.");
+    } finally {
+      setClaimingId(null);
+    }
+  }
+
+  async function deleteDbRecipe() {
+    if (!auth || !dbRecipe) return;
+    setDeletingRecipe(true);
+    try {
+      await api.deleteRecipe(auth.token, dbRecipe.id);
+      setDbRecipe(null);
+      goBack();
+      void refreshMyRecipes();
+    } catch (error) {
+      setMyRecipesError(error instanceof ApiClientError ? error.message : "Could not delete that recipe.");
+    } finally {
+      setDeletingRecipe(false);
+    }
+  }
+
+  function startPrep() {
+    if (!dbRecipe) return;
+    playPop();
+    setOnboardingRecipe(dbRecipe);
+    navigate("onboarding");
+  }
+
+  function startCookingFromOnboarding(result: OnboardingResult) {
+    if (!dbRecipe) return;
+    const legacy = viewToLegacy(dbRecipe, result);
+    setRecipe(legacy);
+    setCheckedIngredients({});
+    setStepIndex(0);
+    setLastEarnedPoints(false);
+    setNotice(`Shopping list saved — ${result.shoppingList.items.filter((i) => !i.alreadyAtHome).length} items to buy for ${result.servings} people.`);
+    window.setTimeout(() => setNotice(null), 6000);
+    playSuccess();
+    navigate("cooking");
   }
 
   // Wrong recipe on the recipe page? Jump straight into AI Top-Chef mode,
@@ -203,9 +366,30 @@ export default function App() {
   }
 
   // --- Fair-play points: honest confirmation + once per unique recipe ---
-  function confirmActuallyMade() {
+  async function confirmActuallyMade() {
     if (!recipe) return;
     setShowHonestyModal(false);
+
+    if (auth) {
+      try {
+        const outcome = await api.cookCompletion(auth.token, recipe.name);
+        setPlayer((p) => ({
+          ...p,
+          points: outcome.points,
+          awardedRecipes: outcome.awarded ? [...p.awardedRecipes, recipe.name] : p.awardedRecipes,
+        }));
+        setAuth((current) =>
+          current ? { ...current, chef: { ...current.chef, points: outcome.points } } : current,
+        );
+        setLastEarnedPoints(outcome.awarded);
+        playSuccess();
+        navigate("done");
+        return;
+      } catch {
+        // offline — fall back to local scoring below
+      }
+    }
+
     const alreadyAwarded = player.awardedRecipes.includes(recipe.name);
     if (alreadyAwarded) {
       setLastEarnedPoints(false);
@@ -273,10 +457,28 @@ export default function App() {
             >
               ← Back
             </button>
+            {chef ? (
+              <button
+                type="button"
+                onClick={() => { playPop(); void refreshMyRecipes(); navigate("myRecipes"); }}
+                className="ml-auto rounded-xl bg-white px-3 py-2 font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95"
+                aria-label="Open my private recipe book"
+              >
+                📖 <span className="hidden sm:inline">My Recipes</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { playPop(); setShowChefGate(true); }}
+                className="ml-auto rounded-xl bg-white px-3 py-2 font-black text-slate-600 ring-1 ring-slate-200 transition active:scale-95"
+              >
+                🔐 <span className="hidden sm:inline">Sign in</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { playPop(); navigate("rewards"); }}
-              className="ml-auto rounded-xl bg-amber-400 px-4 py-2 font-black text-amber-900 shadow transition hover:bg-amber-300 active:scale-95"
+              className="rounded-xl bg-amber-400 px-4 py-2 font-black text-amber-900 shadow transition hover:bg-amber-300 active:scale-95"
               aria-label="Open rewards shop"
             >
               ⭐ {player.points}
@@ -302,12 +504,57 @@ export default function App() {
             character={selectedCharacter}
             buddy={player.myCharacter}
             chefName={chefName}
-            levelLabel={`${selectedLevel.emoji} ${selectedLevel.label}`}
+            levelLabel={chef ? `${chef.roleEmoji} ${chef.roleLabel}` : `${selectedLevel.emoji} ${selectedLevel.label}`}
             points={player.points}
             foodQuery={foodQuery}
             setFoodQuery={setFoodQuery}
-            onOpenFinder={openFinder}
+            onOpenFinder={(query) => void openFinder(query)}
             onRewards={() => navigate("rewards")}
+            chef={chef}
+            onSignIn={() => { playPop(); setShowChefGate(true); }}
+            onMyRecipes={() => { playPop(); void refreshMyRecipes(); navigate("myRecipes"); }}
+            onImport={() => { playPop(); setImporterQuery(""); setShowImporter(true); }}
+            onSignOut={() => void signOut()}
+          />
+        )}
+
+        {screen === "myRecipes" && (
+          <MyRecipes
+            recipes={myRecipes}
+            loading={myRecipesLoading}
+            error={myRecipesError}
+            onOpen={(entry) => void openDbRecipe(entry.id)}
+            onImport={() => { setImporterQuery(""); setShowImporter(true); }}
+            onDelete={(entry) => {
+              if (!auth) return;
+              void api
+                .deleteRecipe(auth.token, entry.id)
+                .then(() => refreshMyRecipes())
+                .catch((error: unknown) =>
+                  setMyRecipesError(error instanceof ApiClientError ? error.message : "Could not delete."),
+                );
+            }}
+            onRefresh={() => void refreshMyRecipes()}
+            onBack={goBack}
+          />
+        )}
+
+        {screen === "dbRecipe" && dbRecipe && (
+          <DbRecipeDetail
+            recipe={dbRecipe}
+            onBack={goBack}
+            onStartPrep={startPrep}
+            onDelete={() => void deleteDbRecipe()}
+            deleting={deletingRecipe}
+          />
+        )}
+
+        {screen === "onboarding" && onboardingRecipe && auth && (
+          <OnboardingFlow
+            recipe={onboardingRecipe}
+            token={auth.token}
+            onCancel={goBack}
+            onStartCooking={startCookingFromOnboarding}
           />
         )}
 
@@ -363,6 +610,53 @@ export default function App() {
           </section>
         )}
       </div>
+
+      {showChefGate && (
+        <ChefGate
+          characters={CHARACTERS}
+          onAuthed={(next) => void handleAuthed(next)}
+          onClose={() => setShowChefGate(false)}
+        />
+      )}
+
+      {searchResult && (
+        <InternalMatches
+          result={searchResult}
+          busyId={claimingId}
+          onOpenOwn={(id) => void openDbRecipe(id)}
+          onClaim={(catalogueId) => void claimShared(catalogueId)}
+          onSearchOnline={openOnlineFinder}
+          onImport={() => {
+            setImporterQuery(searchResult.query);
+            setSearchResult(null);
+            setShowImporter(true);
+          }}
+          onClose={() => setSearchResult(null)}
+        />
+      )}
+
+      {showImporter && auth && (
+        <RecipeImporter
+          token={auth.token}
+          canPublish={chef?.canPublish ?? false}
+          initialQuery={importerQuery}
+          onClose={() => setShowImporter(false)}
+          onSaved={(saved) => {
+            setShowImporter(false);
+            setDbRecipe(saved);
+            navigate("dbRecipe");
+            void refreshMyRecipes();
+          }}
+        />
+      )}
+
+      {notice && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4" role="status">
+          <p className="max-w-md rounded-2xl bg-slate-900/90 px-4 py-3 text-center text-sm font-bold text-white shadow-xl">
+            {notice}
+          </p>
+        </div>
+      )}
 
       {showSmartFinder && (
         <SmartRecipeFinder
@@ -514,6 +808,11 @@ function KitchenScreen({
   setFoodQuery,
   onOpenFinder,
   onRewards,
+  chef,
+  onSignIn,
+  onMyRecipes,
+  onImport,
+  onSignOut,
 }: {
   character: WelcomeCharacter;
   buddy: Buddy | null;
@@ -524,6 +823,11 @@ function KitchenScreen({
   setFoodQuery: (q: string) => void;
   onOpenFinder: (prefill: string) => void;
   onRewards: () => void;
+  chef: ChefProfile | null;
+  onSignIn: () => void;
+  onMyRecipes: () => void;
+  onImport: () => void;
+  onSignOut: () => void;
 }) {
   return (
     <main className="flex flex-1 flex-col gap-5">
@@ -542,6 +846,58 @@ function KitchenScreen({
           ⭐ {points}
         </button>
       </header>
+
+      {chef ? (
+        <section className="rounded-3xl bg-white/90 p-4 shadow ring-1 ring-emerald-100" aria-label="My private kitchen">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl" aria-hidden="true">{chef.roleEmoji}</span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-black text-slate-800">Chef {chef.displayName}&apos;s private kitchen</p>
+              <p className="truncate text-xs font-bold text-slate-500">
+                🔒 Only you can open your recipes · {chef.roleLabel}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs font-black text-slate-500 transition active:scale-95"
+            >
+              Sign out
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onMyRecipes}
+              className="rounded-2xl bg-slate-900 px-3 py-2.5 font-black text-white shadow transition active:scale-95"
+            >
+              📖 My recipes
+            </button>
+            <button
+              type="button"
+              onClick={onImport}
+              className="rounded-2xl bg-gradient-to-r from-fuchsia-500 to-pink-500 px-3 py-2.5 font-black text-white shadow transition active:scale-95"
+            >
+              🤖 AI import
+            </button>
+          </div>
+        </section>
+      ) : (
+        <button
+          type="button"
+          onClick={onSignIn}
+          className="flex w-full items-center gap-3 rounded-3xl bg-white/90 p-4 text-left shadow ring-1 ring-orange-100 transition active:scale-[0.99]"
+        >
+          <span className="text-3xl" aria-hidden="true">🔐</span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-black text-slate-800">Open my private recipe book</span>
+            <span className="block text-xs font-bold text-slate-500">
+              Junior, Teen, Adult or Master Chef — your recipes stay yours alone.
+            </span>
+          </span>
+          <span className="shrink-0 font-black text-orange-500">→</span>
+        </button>
+      )}
 
       <section className="rounded-3xl bg-gradient-to-br from-orange-400 via-pink-500 to-fuchsia-500 p-5 text-white shadow-xl" aria-label="AI recipe search">
         <h3 className="text-lg font-black">🔮 AI Smart Chef Search</h3>

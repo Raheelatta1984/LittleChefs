@@ -360,3 +360,128 @@ Works perfectly **as‑is** for static deployment:
 
 ═══════════════════════════════════════════════════
 END OF DOCUMENT — copy/paste safe for agent review & rebuild.
+
+---
+
+## 14. 🆕 V3 — Private Postgres kitchens, role access & AI recipe onboarding
+
+> This section supersedes the "no backend" statements in §2 for anything recipe-related.
+> The React client still works standalone (localStorage demo mode), but the real app now runs
+> against a PostgreSQL API in `server/`.
+
+### 14.1 Architecture
+
+```
+Browser (React 19 + Vite)
+   │  same-origin /api (Vite proxies in dev, Express serves dist/ in prod)
+   ▼
+Express 5 API  (server/)
+   │  migrations + seed + services
+   ▼
+PostgreSQL 16  — PGlite (WASM, local) or hosted via DATABASE_URL
+```
+
+- `server/index.ts` — boot: create DB → migrate → seed built-ins → listen on `0.0.0.0:8787`.
+- `server/db/` — driver abstraction (`pglite.ts`, `postgres.ts`), `migrate.ts`, `seed.ts`,
+  `migrations/001_init.sql` (schema) and `002_rls.sql` (grants + policies).
+- `server/services/` — `normalise.ts` (dish/ingredient identity), `recipes.ts` (private book +
+  catalogue + internal search), `scaling.ts` (portion maths), `shopping.ts` (aisles + consolidation),
+  `onboarding.ts` (interview → plan → shopping list), `importer/*` (fetch, JSON-LD, YouTube, text, LLM).
+- `server/routes/` — `auth`, `recipes`, `import`, `catalogue`, `uploads`.
+- `shared/types.ts` — types used by both the API and the React app.
+
+### 14.2 Roles
+
+`roles` table drives capabilities (rank, `can_publish`, `requires_grownup`, `max_batch_servings`):
+
+| id | label | publish | grown-up | max batch |
+|---|---|---|---|---|
+| junior | Junior Chef (10–14) | ✗ | ✓ | 8 |
+| teen | Teen Chef (15–19) | ✓ | ✗ | 16 |
+| adult | Adult Chef | ✓ | ✗ | 40 |
+| master | Master Chef (Pro) | ✓ | ✗ | 100 |
+
+### 14.3 Ownership enforcement
+
+Every user-data query runs inside `db.withChef(chefId, tx => …)`:
+
+```sql
+BEGIN;
+SET LOCAL ROLE chef_app;
+SELECT set_config('app.chef_id', $1, true);
+-- …queries, subject to FORCE ROW LEVEL SECURITY…
+COMMIT;
+```
+
+Policies compare `chef_id = app_chef_id()`; child tables use `EXISTS (… chef_recipes …)`.
+Even a query with a missing `WHERE` clause returns zero rows for the wrong chef.
+
+### 14.4 Internal-first search
+
+`findInternalMatches()` → own recipes (RLS) → shared catalogue (exact key, normalised title,
+alias, fuzzy `isSameDish`) → `needsOnboarding: true`.
+Claiming a catalogue recipe copies the full content into `chef_recipes`; `created_by_chef`
+is stored only on `catalogue_recipes` and never selected by the API.
+
+### 14.5 AI onboarding flow
+
+`POST /api/imports` → `importRecipe()`:
+
+1. `classifyInput` → url | youtube | text | dish
+2. website: fetch (SSRF-guarded) → JSON-LD Recipe → fallback page heuristic → optional LLM
+   youtube: oEmbed + watch-page description → text parser → optional LLM
+   text: heading/bullet parser → optional LLM
+   dish: LLM only (honest error without a key)
+3. `tidyDraft` (positions, dedupe, caps) + `confidenceOf` + `warningsFor`
+4. Job stored as `review` — the UI shows an editable review before `POST /imports/:id/confirm`.
+
+Per-step images come from the source where present; otherwise the UI shows a labelled placeholder
+(no invented photos).
+
+### 14.6 Onboarding interview, portions and shopping list
+
+- `runOnboarding()` clamps servings to the role's `max_batch_servings` (with a friendly reminder),
+  computes `factor = servings / baseServings`, scales every ingredient with unit-aware rounding,
+  and adapts portion guidance by meal (breakfast 80 %, lunch/dinner 100 %, late-night 60 %).
+- `buildShoppingList()` maps each ingredient to an aisle (longest keyword match, head-noun bonus),
+  merges duplicates (sums matching units, joins mismatched ones), marks pantry items
+  `already_at_home`, and returns aisle-ordered groups.
+- `onboarding_sessions`, `shopping_lists` and `shopping_list_items` persist the whole plan so the
+  list survives a reload and can be ticked off in the shop.
+
+### 14.7 Client additions
+
+| File | Role |
+|---|---|
+| `src/lib/api.ts` | Typed API client, token storage (`chefUniverseAuth`), friendly offline error |
+| `src/lib/adapters.ts` | DB recipe / scaled plan → legacy `Recipe` for the cooking screens |
+| `src/components/ChefGate.tsx` | Create/sign in a chef, pick role, avatar, optional PIN |
+| `src/components/MyRecipes.tsx` | Private book list, filter, delete, import CTA |
+| `src/components/DbRecipeDetail.tsx` | DB recipe with per-step images + "Prep & shopping list" |
+| `src/components/RecipeImporter.tsx` | Import → review/edit → save to my book |
+| `src/components/OnboardingFlow.tsx` | People/meal/diet/pantry interview → scaled plan + shopping list |
+| `src/components/InternalMatches.tsx` | Internal-first results + claim, or "import with AI" |
+
+`App.tsx` gains screens `myRecipes`, `dbRecipe`, `onboarding`, an internal-first search path and a
+server-authoritative points call (`POST /me/cook-completion`).
+
+### 14.8 Tests
+
+`npm test` runs `tests/*.test.ts` on in-memory PGlite:
+
+- `ownership.test.ts` — cross-chef read/update/delete/list/search isolation, catalogue privacy
+- `scaling.test.ts` — quantity parsing, rounding, fractions, egg handling
+- `shopping.test.ts` — aisle mapping, de-duplication, pantry exclusion, group ordering
+- `normalise.test.ts` — title/alias matching, generic-word guards
+- `importer.test.ts` — JSON-LD, description parsing, fixture site, failure paths, SSRF
+- `api.test.ts` — full HTTP journey: import → confirm → search → claim → onboarding →
+  shopping tick-off → points → uploads → PIN auth
+
+### 14.9 Constraints & honest limitations
+
+- Sandbox has no Postgres binary or Docker ⇒ PGlite is the default driver; hosted Postgres works
+  via `DATABASE_URL` and the identical SQL.
+- Website imports need outbound internet from wherever the API runs.
+- Paywalled/JS-only pages and videos without a transcript/description cannot be imported;
+  the API explains why and offers manual entry.
+- The demo web app still runs without the API (localStorage mode) so a static build is never broken.
