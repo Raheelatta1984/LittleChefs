@@ -4,7 +4,8 @@ import { confidenceOf, emptyDraft, stripHtml, titleFromUrl } from "./parse.js";
 import { safeFetchPage } from "./fetch.js";
 import { extractJsonLdRecipe, extractPageFallback } from "./jsonld.js";
 import { importFromYouTube, youtubeVideoId } from "./youtube.js";
-import { parseRecipeFromText } from "./text.js";
+import { parseRecipeFromText, type ParseReport } from "./text.js";
+import { isPageNoiseLine } from "./clean.js";
 import { extractRecipeLinks, rankCardsForDish } from "./links.js";
 import { llmConfigured, structureWithLlm } from "./llm.js";
 
@@ -66,6 +67,13 @@ export function mergeDrafts(primary: RecipeDraft, secondary: RecipeDraft): Recip
   };
 }
 
+/** Friendly note shown in the review screen when a page carried extra clutter. */
+export function noiseWarning(report: ParseReport): string | null {
+  if (report.skippedNoiseLines <= 0) return null;
+  const count = report.skippedNoiseLines;
+  return `We left out ${count} line${count === 1 ? "" : "s"} that were not part of the recipe (nutrition panels, reviews, dates and page buttons).`;
+}
+
 export function tidyDraft(input: RecipeDraft): RecipeDraft {
   const seenSteps = new Set<string>();
   const steps = input.steps
@@ -79,8 +87,23 @@ export function tidyDraft(input: RecipeDraft): RecipeDraft {
     .slice(0, 60)
     .map((step, position) => ({ ...step, position, instruction: step.instruction.trim().slice(0, 1200) }));
 
+  // Safety net for every source (JSON-LD, page text, YouTube, OCR, LLM, hints):
+  // page furniture and exact repeats must never reach the review screen.
+  const seenIngredients = new Set<string>();
   const ingredients = input.ingredients
     .filter((ing) => ing.item?.trim())
+    .filter((ing) => !isPageNoiseLine(ing.item))
+    .filter((ing) => {
+      const key = [
+        ing.groupName?.trim().toLowerCase() ?? "",
+        ing.unit?.trim().toLowerCase() ?? "",
+        ing.quantity ?? "",
+        ing.item.trim().toLowerCase().replace(/\s+/g, " "),
+      ].join("|");
+      if (seenIngredients.has(key)) return false;
+      seenIngredients.add(key);
+      return true;
+    })
     .slice(0, 80)
     .map((ing, position) => ({
       ...ing,
@@ -170,7 +193,8 @@ export async function importRecipe(
   }
 
   if (inputType === "text") {
-    const heuristic = parseRecipeFromText(value, {});
+    const report: ParseReport = { skippedNoiseLines: 0, collapsedDuplicates: 0 };
+    const heuristic = parseRecipeFromText(value, { report });
     let draft = heuristic;
     let method: ImportOutcome["method"] = "heuristic";
 
@@ -188,7 +212,10 @@ export async function importRecipe(
       );
     }
     const tidy = tidyDraft({ ...draft, sourceType: draft.sourceType === "ai" ? "ai" : "web" });
-    return { draft: tidy, method, confidence: confidenceOf(tidy), warnings: warningsFor(tidy, method) };
+    const note = noiseWarning(report);
+    const warnings = warningsFor(tidy, method);
+    if (note && method === "heuristic") warnings.unshift(note);
+    return { draft: tidy, method, confidence: confidenceOf(tidy), warnings };
   }
 
   if (inputType === "youtube") {
@@ -252,6 +279,7 @@ export async function importRecipe(
   }
 
   // --- Website ---
+  const report: ParseReport = { skippedNoiseLines: 0, collapsedDuplicates: 0 };
   const page = await safeFetchPage(value, { fetchImpl: options.fetchImpl });
   const jsonld = extractJsonLdRecipe(page.html, page.url);
 
@@ -266,6 +294,7 @@ export async function importRecipe(
     const heuristic = parseRecipeFromText(pageText, {
       title: fallback.title ?? titleFromUrl(page.url),
       sourceUrl: page.url,
+      report,
     });
     heuristic.heroImageUrl = heuristic.heroImageUrl ?? fallback.heroImageUrl;
     heuristic.description = heuristic.description ?? fallback.description;
@@ -346,7 +375,10 @@ export async function importRecipe(
   }
 
   const tidy = tidyDraft(draft);
-  return { draft: tidy, method, confidence: confidenceOf(tidy), warnings: warningsFor(tidy, method) };
+  const warnings = warningsFor(tidy, method);
+  const note = noiseWarning(report);
+  if (note && method === "heuristic") warnings.unshift(note);
+  return { draft: tidy, method, confidence: confidenceOf(tidy), warnings };
 }
 
 export { emptyDraft };

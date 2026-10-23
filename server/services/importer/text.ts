@@ -1,5 +1,8 @@
 import type { Ingredient, RecipeDraft, Step } from "../../../shared/types.js";
-import { emptyDraft, parseIngredientLine, parseServings, stepFromText, titleFromUrl } from "./parse.js";
+import { emptyDraft, parseIngredientLine, stepFromText, titleFromUrl } from "./parse.js";
+import {
+  isDateLikeLine, isPageNoiseLine, isSectionStopHeading, isLikelyStepLine,
+} from "./clean.js";
 
 const INGREDIENT_WORDS = String.raw`(?:ingredients?|you(?:'| wi)ll need|what you need|shopping list)`;
 const STEP_WORDS = String.raw`(?:method|instructions?|directions?|steps?|preparation|how to (?:make|cook)|procedure|cooking|directions in english)`;
@@ -67,6 +70,73 @@ export function findRecipeSections(rawText: string): { ingredients: number; step
   };
 }
 
+/** What the parser had to throw away — surfaced to the chef as a warning. */
+export type ParseReport = { skippedNoiseLines: number; collapsedDuplicates: number };
+
+function minutesFromLine(line: string): number | null {
+  const hours = line.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/i);
+  const minutes = line.match(/(\d+)\s*(?:minutes?|mins?|min|m)\b/i);
+  const total = (hours ? Number(hours[1]) * 60 : 0) + (minutes ? Number(minutes[1]) : 0);
+  return total > 0 ? Math.round(total) : null;
+}
+
+function firstLineMinutes(lines: string[], pattern: RegExp): number | null {
+  for (const line of lines) {
+    if (!pattern.test(line)) continue;
+    const found = minutesFromLine(line);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * "Serves 6", "Serve is for 6 people", "6 servings" or a "Number of servings"
+ * field followed by its value. Read line-by-line so the number can never be
+ * stolen from the first ingredient ("Number of servings ⏎ 2 tsp oil").
+ */
+export function detectServings(lines: string[]): number | null {
+  const clamp = (value: number) => (value >= 1 && value <= 100 ? value : null);
+  for (const line of lines) {
+    const direct = line.match(/^\s*(?:serves?|servings?|yield|makes)\b[^0-9\n]{0,24}(\d{1,3})\b/i);
+    if (direct) {
+      const parsed = clamp(Number(direct[1]));
+      if (parsed) return parsed;
+    }
+    const reverse = line.match(/^\s*(\d{1,3})\s*(?:servings?|portions?|people|persons?)\b/i);
+    if (reverse) {
+      const parsed = clamp(Number(reverse[1]));
+      if (parsed) return parsed;
+    }
+  }
+  const label = lines.findIndex((line) => /^\s*number of servings\b/i.test(line));
+  if (label >= 0) {
+    for (const line of lines.slice(label + 1, label + 4)) {
+      const match = line.match(/^\s*(\d{1,3})\s*$/);
+      if (match) {
+        const parsed = clamp(Number(match[1]));
+        if (parsed) return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+/** Total time from explicit "Total time" lines, else prep + cook. */
+export function detectTotalMinutes(lines: string[]): number | null {
+  const total = firstLineMinutes(lines, /^\s*(?:total|overall)\b[^a-z]*(?:time)?\b/i);
+  if (total) return total;
+  const prep = firstLineMinutes(lines, /^\s*prep(?:aration)?(?:\s*time)?\b/i);
+  const cook = firstLineMinutes(lines, /^\s*cook(?:ing)?(?:\s*time)?\b/i);
+  if (prep || cook) return (prep ?? 0) + (cook ?? 0) || null;
+  return firstLineMinutes(lines, /(?:total|prep(?:aration)?|cook(?:ing)?)\s*time\s*[:\-]/i);
+}
+
+function ingredientKey(ingredient: { item: string; quantity: number | null; unit: string | null; groupName: string | null }): string {
+  return [ingredient.groupName ?? "", ingredient.unit ?? "", ingredient.quantity ?? "", ingredient.item.toLowerCase()]
+    .join("|")
+    .replace(/\s+/g, " ");
+}
+
 /**
  * Deterministic parser for a YouTube description, pasted recipe text, OCR
  * scan, or stripped web page. Handles the common "Ingredients / Method"
@@ -75,32 +145,59 @@ export function findRecipeSections(rawText: string): { ingredients: number; step
  */
 export function parseRecipeFromText(
   rawText: string,
-  options: { title?: string; sourceUrl?: string | null; sourceVideoId?: string | null; sourceChannel?: string | null } = {},
+  options: {
+    title?: string;
+    sourceUrl?: string | null;
+    sourceVideoId?: string | null;
+    sourceChannel?: string | null;
+    /** Filled in with how much page furniture was filtered out. */
+    report?: ParseReport;
+  } = {},
 ): RecipeDraft {
   const lines = cleanLines(rawText);
   const nonEmpty = lines.filter((line) => line.length > 0);
+  const report: ParseReport = options.report ?? { skippedNoiseLines: 0, collapsedDuplicates: 0 };
+  const ingredients: Ingredient[] = [];
+  const steps: Step[] = [];
+  const noise = (line: string) => {
+    if (isPageNoiseLine(line) || isSectionStopHeading(line)) {
+      report.skippedNoiseLines += 1;
+      return true;
+    }
+    return false;
+  };
+  const seenIngredients = new Set<string>();
+  const addIngredient = (ingredient: ReturnType<typeof parseIngredientLine>, group: string | null) => {
+    if (!ingredient) return;
+    ingredient.groupName = group;
+    const key = ingredientKey(ingredient);
+    if (seenIngredients.has(key)) {
+      report.collapsedDuplicates += 1;
+      return;
+    }
+    seenIngredients.add(key);
+    ingredients.push(ingredient);
+  };
 
   const ingredientStart = findHeading(lines, INGREDIENT_HEADING, INGREDIENT_HEADING_SUFFIX);
   const stepStart = findHeading(lines, STEP_HEADING, STEP_HEADING_SUFFIX);
-
-  const ingredients: Ingredient[] = [];
-  const steps: Step[] = [];
 
   if (ingredientStart >= 0 && stepStart > ingredientStart) {
     let currentGroup: string | null = null;
     for (const line of lines.slice(ingredientStart + 1, stepStart)) {
       if (!line) continue;
-      if (TRANSLATION_BLOCK_START.test(line.replace(/\*\*/g, "").trim())) break;
+      const bare = line.replace(/\*\*/g, "").trim();
+      if (TRANSLATION_BLOCK_START.test(bare)) break;
+      // Nutrition panels, reviews, descriptions and related-recipe blocks
+      // start after the ingredient list — stop instead of swallowing them.
+      if (isSectionStopHeading(bare)) break;
+      if (noise(bare)) continue;
       const group = groupHeadingOf(line);
       if (group) {
         currentGroup = group;
         continue;
       }
-      const parsed = parseIngredientLine(line, ingredients.length);
-      if (parsed) {
-        parsed.groupName = currentGroup;
-        ingredients.push(parsed);
-      }
+      addIngredient(parseIngredientLine(line, ingredients.length), currentGroup);
     }
 
     let buffer = "";
@@ -108,7 +205,8 @@ export function parseRecipeFromText(
     const flush = () => {
       const text = buffer.trim();
       if (text.length >= 15) {
-        steps.push(stepFromText(text, position++));
+        if (isLikelyStepLine(text)) steps.push(stepFromText(text, position++));
+        else report.skippedNoiseLines += 1;
       }
       buffer = "";
     };
@@ -116,6 +214,9 @@ export function parseRecipeFromText(
       if (!line) continue;
       const bare = line.replace(/\*\*/g, "").trim();
       if (TRANSLATION_BLOCK_START.test(bare)) break;
+      // "Reviews", "You might also like", "Cost per serve" … end the method.
+      if (isSectionStopHeading(bare)) break;
+      if (noise(bare)) continue;
       if (groupHeadingOf(line)) {
         flush();
         continue;
@@ -141,9 +242,11 @@ export function parseRecipeFromText(
     for (const line of nonEmpty) {
       if (line.length > 100 || line.split(/\s+/).length > 9) continue;
       if (TRANSLATION_BLOCK_START.test(line)) break;
+      if (isSectionStopHeading(line)) continue;
+      if (noise(line)) continue;
       const parsed = parseIngredientLine(line, ingredients.length);
       if (parsed && (parsed.quantity !== null || parsed.unit !== null)) {
-        ingredients.push(parsed);
+        addIngredient(parsed, null);
       }
     }
   }
@@ -154,25 +257,30 @@ export function parseRecipeFromText(
       if (/^(ingredients?|method|instructions?|directions?|steps?)\s*:?$/i.test(line)) continue;
       if (/https?:\/\//.test(line)) continue;
       if (/^\d/.test(line) && ingredients.some((i) => line.toLowerCase().includes(i.item.toLowerCase()))) continue;
+      if (isSectionStopHeading(line) || noise(line)) continue;
+      if (!isLikelyStepLine(line)) continue;
       steps.push(stepFromText(line, steps.length));
     }
   }
 
-  const servingsLine = rawText.match(/(?:serves?|servings?|makes|yield)\s*:?\s*(\d+)/i);
-  const timeLine = rawText.match(/(?:total time|prep(?:aration)? time|cook time)\s*:?\s*([^\n]{1,40})/i);
-  const totalMinutes = timeLine
-    ? (Number(/(\d+)\s*(?:hours?|hrs?)/i.exec(timeLine[1])?.[1] ?? 0) * 60 +
-        Number(/(\d+)\s*(?:minutes?|mins?)/i.exec(timeLine[1])?.[1] ?? 0)) || null
-    : null;
+  const servings = detectServings(nonEmpty);
+  const totalMinutes = detectTotalMinutes(nonEmpty);
 
   const titleLine = nonEmpty.find(
-    (line) => line.length >= 3 && line.length <= 100 && !INGREDIENT_HEADING.test(line) && !STEP_HEADING.test(line),
+    (line) =>
+      line.length >= 3 &&
+      line.length <= 100 &&
+      !INGREDIENT_HEADING.test(line) &&
+      !STEP_HEADING.test(line) &&
+      !isSectionStopHeading(line) &&
+      !isPageNoiseLine(line) &&
+      !isDateLikeLine(line),
   );
 
   return emptyDraft({
     title: options.title?.trim() || titleLine || (options.sourceUrl ? titleFromUrl(options.sourceUrl) : "Imported recipe"),
     description: nonEmpty.slice(0, 2).join(" ").slice(0, 400) || null,
-    baseServings: parseServings(servingsLine?.[1]) ?? 4,
+    baseServings: servings ?? 4,
     totalMinutes,
     sourceType: options.sourceVideoId ? "youtube" : "web",
     sourceUrl: options.sourceUrl ?? null,

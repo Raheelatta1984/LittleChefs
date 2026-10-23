@@ -113,6 +113,30 @@ export function extractJsonLdRecipe(html: string, pageUrl: string): RecipeDraft 
   return draft;
 }
 
+/**
+ * "Healthier Spaghetti Bolognese Recipe | Woolworths" → "Healthier Spaghetti
+ * Bolognese Recipe". Drops a trailing site-name segment (it matches the page
+ * host, or is a short brand-like block) but keeps real subtitle text.
+ */
+export function tidyPageTitle(value: string | null, pageUrl: string): string | null {
+  if (!value) return value;
+  const trimmed = value.trim();
+  const segments = trimmed.split(/\s*[|·•—–]\s*/).filter(Boolean);
+  if (segments.length < 2) return trimmed;
+  let host = "";
+  try {
+    host = new URL(pageUrl).hostname.replace(/^www\./i, "").split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+  } catch {
+    /* keep host empty */
+  }
+  const last = segments[segments.length - 1].trim();
+  const lastKey = last.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const looksLikeSiteName = Boolean(host) && lastKey.length > 2 && (host.startsWith(lastKey) || lastKey.startsWith(host));
+  const shortBrand = last.split(/\s+/).length <= 3 && last.length <= 24;
+  if (looksLikeSiteName || shortBrand) return segments.slice(0, -1).join(" — ").trim();
+  return trimmed;
+}
+
 /** OpenGraph / meta fallback when a page has no schema.org Recipe block. */
 export function extractPageFallback(html: string, pageUrl: string): RecipeDraft {
   const meta = (property: string): string | null => {
@@ -130,13 +154,13 @@ export function extractPageFallback(html: string, pageUrl: string): RecipeDraft 
   const titleTag = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const heading = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   const text = stripHtml(html);
+  const rawTitle =
+    [meta("og:title"), decodeEntities(titleTag?.[1] ?? ""), decodeEntities(heading?.[1] ?? "")]
+      .map((candidate) => candidate?.trim())
+      .find((candidate) => Boolean(candidate)) ?? "";
 
   return emptyDraft({
-    title:
-      meta("og:title") ??
-      decodeEntities(titleTag?.[1] ?? "").split(/[|·—]/)[0].trim() ??
-      decodeEntities(heading?.[1] ?? "").trim() ??
-      titleFromUrl(pageUrl),
+    title: tidyPageTitle(rawTitle, pageUrl) || titleFromUrl(pageUrl),
     description: meta("og:description") ?? meta("description"),
     heroImageUrl: meta("og:image") ?? meta("twitter:image"),
     sourceType: pageUrl.includes("youtube.com") || pageUrl.includes("youtu.be") ? "youtube" : "web",
