@@ -86,6 +86,7 @@ npm start         # preview build
     ├── data/
     │   ├── recipes.ts                 # ★ Built-in recipe library + findRecipe() coverage-matching + generic template engine
     │   ├── topChefs.ts                # ★ Curated top-10 chef recipes (TheMealDb IDs, inspiredBy names, continents)
+    │   ├── famousChefs.ts             # ★ Famous chefs/YouTubers by region & country for "❌ Not This" → AI Top-Chef mode
     │   └── rewards.ts                 # ★ Rewards catalog: POINTS_PER_RECIPE=50, NEW_RECIPE_COST=200, ROOM_ITEMS, SKIN_TONES, OUTFITS, ACCESSORIES
     ├── utils/
     │   ├── audio.ts                   # WebAudio sounds: playPop, playDing, playSuccess, speakText (TTS), stopSpeaking
@@ -171,7 +172,10 @@ Location: `src/components/SmartRecipeFinder.tsx` (modal, mounted when `showSmart
    - First 4 ingredient lines + "+N more..."
    - **Embedded YouTubePlayer** (plays inside app)
    - Text: *"Is this the recipe you're looking for?"*
-   - **❌ Not This** → back to top10/search (keep searching)
+   - **❌ Not This** → **`aiChefs` stage (AI Top-Chef mode)**: remembers the rejected recipe (by name for built-ins, by TheMealDB meal ID for online recipes — never the whole dish, so another chef's version stays available), detects the dish's relevant **region & country** (`detectChefRegion` in `famousChefs.ts`, from cuisine/continent/dish keywords), re-searches TheMealDB tuned to that region, and displays **numbered famous-chef options** for the user to choose from — e.g. for biryani: **1. Food Fusion 🇵🇰, 2. Ranveer Brar 🇮🇳, 3. Sanjeev Kapoor Khazana 🇮🇳…** Region/country chips (South Asia, Pakistan, India, East & SE Asia, Europe, Middle East & Africa, Americas, Australia, Baking) let the user correct the region, and the dish name can be edited and re-searched. Each chef card offers:
+     - **“👩‍🍳 Cook \<Chef\> Style in the App”** → `chooseChef()` finds the best in-app version in that chef's regional style (TheMealDB, preferring the chef's cuisine areas, skipping rejected meal IDs; honest Universal fallback offline) and shows it on the **same confirm gate** — still nothing loads without “✓ Yes”.
+     - **“🌐 Search \<Chef\>'s Website”** / **“📺 Search on YouTube”** → deliberate, grown-up-labelled **searches** for the dish on that chef's own official site/channel (never a fabricated recipe URL or video ID; the in-app video is still only the recipe's own TheMealDB `strYoutube`).
+     - Fresh online recipes for the region are listed below the chefs too; tapping one goes through the same confirm gate. “Not This” from an AI-chef recipe returns to `aiChefs` with that chef marked “↩️ Tried” and sunk to the bottom. The Recipe screen also has a **“❌ Not This Recipe? Ask AI Top Chefs”** button (`initialMode="aiChefs"` + `rejectedRecipeName`/`rejectedMealId` props) that opens this same stage directly. Confirmed chef-style recipes carry `chefName/chefCountry/chefWebsiteSearchUrl/chefYouTubeSearchUrl` (on `Recipe`) so the Recipe screen shows the “inspired by \<Chef\>” box with the official website/YouTube searches.
    - **✓ Yes, That's Exactly It!** → `confirmYes()` → stage `'loading'` → `saveRecipeToStorage()` → `onRecipeFound(recipe)` → App loads recipe and closes modal.
 
    **THIS IS THE NUMBER ONE RULE: Never show a recipe/result to the user as their final recipe until they explicitly confirm YES that it matches what they were looking for.**
