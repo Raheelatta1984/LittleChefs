@@ -1,0 +1,60 @@
+import { resolve } from "node:path";
+
+function num(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function bool(value: string | undefined, fallback = false): boolean {
+  if (value === undefined) return fallback;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+const databaseUrl = process.env.DATABASE_URL?.trim() || "";
+const driver = (process.env.DB_DRIVER?.trim() || (databaseUrl ? "postgres" : "pglite")).toLowerCase();
+
+export const config = {
+  env: process.env.NODE_ENV ?? "development",
+  port: num(process.env.PORT, 8787),
+  /**
+   * `pglite` runs the real Postgres engine in-process (WASM) — ideal for local dev,
+   * tests and demos with zero infrastructure. `postgres` points at any hosted
+   * Postgres (Neon / Supabase / RDS / docker-compose) via DATABASE_URL.
+   */
+  db: {
+    driver: driver === "postgres" ? ("postgres" as const) : ("pglite" as const),
+    url: databaseUrl,
+    pgliteDir: process.env.PGLITE_DIR?.trim() || resolve(process.cwd(), "server/.data/pglite"),
+    ssl: bool(process.env.DATABASE_SSL, false),
+  },
+  auth: {
+    sessionDays: num(process.env.SESSION_TTL_DAYS, 30),
+  },
+  imports: {
+    timeoutMs: num(process.env.IMPORT_TIMEOUT_MS, 12_000),
+    maxBytes: num(process.env.IMPORT_MAX_BYTES, 2_500_000),
+    maxRedirects: num(process.env.IMPORT_MAX_REDIRECTS, 4),
+    /** Only for local fixtures/tests — never enable in production. */
+    allowPrivateHosts: bool(process.env.IMPORT_ALLOW_PRIVATE_HOSTS, false),
+  },
+  llm: {
+    /** Any OpenAI-compatible endpoint: OpenAI, OpenRouter, Groq, Gemini compat, Ollama… */
+    baseUrl: process.env.LLM_BASE_URL?.trim() || "https://api.openai.com/v1",
+    apiKey: process.env.LLM_API_KEY?.trim() || "",
+    model: process.env.LLM_MODEL?.trim() || "gpt-4o-mini",
+    timeoutMs: num(process.env.LLM_TIMEOUT_MS, 25_000),
+  },
+  uploads: {
+    dir: process.env.UPLOADS_DIR?.trim() || resolve(process.cwd(), "server/.data/uploads"),
+    maxBytes: num(process.env.UPLOAD_MAX_BYTES, 4_000_000),
+    publicPath: "/uploads",
+  },
+  cors: {
+    origins: (process.env.CORS_ORIGINS ?? "")
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean),
+  },
+} as const;
+
+export type AppConfig = typeof config;
