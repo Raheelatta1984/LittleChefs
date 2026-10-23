@@ -1,0 +1,12 @@
+/* Legacy character styles (kept for compatibility — V2 renders portraits in CSSCharacter.tsx) */
+.character-portrait {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+}
+.character-portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

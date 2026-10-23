@@ -1,0 +1,6 @@
+/* Legacy CSS-character styles (minimal — superseded by image portraits in V2) */
+.css-character {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

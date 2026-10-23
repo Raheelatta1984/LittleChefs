@@ -7,9 +7,12 @@ export type Recipe = {
   ingredients: string[];
   steps: string[];
   tip: string;
+  isGeneric?: boolean;
+  image?: string;
+  youtubeVideo?: string;
+  source?: string;
+  sourceUrl?: string;
 };
-
-import { worldRecipes, worldRecipeKeywords } from "./worldRecipes";
 
 const recipeBook: Record<string, Recipe> = {
   pancake: {
@@ -911,6 +914,216 @@ const recipeBook: Record<string, Recipe> = {
     ],
     tip: "These are only 3 ingredients — perfect for little chefs!",
   },
+  tresleches: {
+    name: "Tres Leches Cake",
+    emoji: "🍰",
+    time: "50 minutes + chilling",
+    difficulty: "A Little Tricky",
+    servings: "12 slices",
+    ingredients: ["1 cup all-purpose flour", "1 1/2 teaspoons baking powder", "1/4 teaspoon salt", "5 eggs, separated", "1 cup sugar, divided", "1/3 cup milk", "1 teaspoon vanilla extract", "1 can (12 oz) evaporated milk", "1 can (14 oz) sweetened condensed milk", "1/4 cup whole milk", "1 cup heavy cream + 2 tablespoons sugar (topping)", "Ground cinnamon, for dusting"],
+    steps: ["Ask a grown-up to preheat the oven to 350°F (175°C) and grease a 9x13 inch pan.", "Whisk the flour, baking powder, and salt in a bowl.", "Beat the egg yolks with 3/4 cup sugar until pale, then stir in the milk and vanilla and fold in the flour mix.", "Beat the egg whites with the remaining 1/4 cup sugar until stiff peaks form, then fold gently into the batter.", "Pour into the pan and ask a grown-up to bake for 25–30 minutes until a toothpick comes out clean.", "Mix the evaporated milk, condensed milk, and whole milk — that's the famous three-milks soak!", "Poke holes all over the cooled cake with a fork and slowly pour the three-milks mix over it.", "Chill for at least 2 hours (overnight is best), then top with whipped cream and a dusting of cinnamon.", "Slice and enjoy your milky, dreamy Tres Leches Cake!"],
+    tip: "The cake should feel like a sponge — it drinks up all three milks and stays super soft.",
+    source: "Classic Tres Leches (Preppy Kitchen style)",
+  },
+  mkchocolate: {
+    name: "Cakes by MK Moist Chocolate Cake",
+    emoji: "🍫",
+    time: "55 minutes",
+    difficulty: "Easy",
+    servings: "12 slices",
+    ingredients: ["2 cups all-purpose flour", "2 cups sugar", "3/4 cup cocoa powder", "2 teaspoons baking powder", "1 1/2 teaspoons baking soda", "1 teaspoon salt", "1 cup milk", "1/2 cup vegetable oil", "2 eggs", "2 teaspoons vanilla extract", "1 cup hot water or hot coffee"],
+    steps: ["Ask a grown-up to preheat the oven to 350°F (175°C) and grease two 9-inch round pans.", "Whisk all the dry ingredients in a big bowl.", "Add milk, oil, eggs, and vanilla. Mix until smooth.", "Slowly stir in the hot water — the batter will be thin, and that's the secret to moist cake!", "Divide the batter between the pans.", "Ask a grown-up to bake for 30–35 minutes until a toothpick comes out clean.", "Cool in the pans for 10 minutes, then turn out and cool completely.", "Frost with your favourite chocolate frosting and slice!"],
+    tip: "Hot coffee makes the chocolate taste even more chocolatey — grown-ups love this trick.",
+    source: "Cakes by MK",
+    sourceUrl: "https://cakesbymk.com/",
+  },
+  mkvanilla: {
+    name: "Cakes by MK Soft Vanilla Cake",
+    emoji: "🍰",
+    time: "55 minutes",
+    difficulty: "Easy",
+    servings: "12 slices",
+    ingredients: ["2 1/2 cups all-purpose flour", "2 1/2 teaspoons baking powder", "1/2 teaspoon salt", "3/4 cup soft butter", "1 3/4 cups sugar", "4 egg whites, room temperature", "2 teaspoons vanilla extract", "1 cup milk, room temperature", "1/4 cup vegetable oil"],
+    steps: ["Ask a grown-up to preheat the oven to 350°F (175°C) and grease two 8-inch round pans.", "Whisk flour, baking powder, and salt together.", "Beat the butter and sugar until pale and fluffy (about 3 minutes).", "Beat in the egg whites one at a time, then the vanilla.", "Add the flour mix in three parts, alternating with the milk and oil. Mix gently!", "Divide between the pans and smooth the tops.", "Ask a grown-up to bake for 30–35 minutes until springy to the touch.", "Cool completely, frost, add sprinkles, and serve your soft cloud cake!"],
+    tip: "Room-temperature ingredients mix more smoothly and make a softer crumb.",
+    source: "Cakes by MK",
+    sourceUrl: "https://cakesbymk.com/",
+  },
+  mkredvelvet: {
+    name: "Cakes by MK Eggless Red Velvet Cake",
+    emoji: "❤️",
+    time: "55 minutes",
+    difficulty: "Easy",
+    servings: "12 slices",
+    ingredients: ["2 1/2 cups all-purpose flour", "2 tablespoons cocoa powder", "1 teaspoon baking soda", "1/2 teaspoon salt", "1 1/2 cups sugar", "1 1/2 cups buttermilk (or milk + 1 tablespoon vinegar)", "3/4 cup vegetable oil", "2 teaspoons vanilla extract", "1–2 teaspoons red food colouring", "Cream-cheese frosting, to decorate"],
+    steps: ["Ask a grown-up to preheat the oven to 350°F (175°C) and grease two 8-inch pans.", "If making buttermilk: stir vinegar into milk and wait 5 minutes until it curdles slightly.", "Whisk flour, cocoa, baking soda, and salt in one bowl.", "In another bowl, whisk sugar, buttermilk, oil, vanilla, and red colouring — no eggs needed!", "Fold the dry mix into the wet mix until just combined.", "Divide between the pans.", "Ask a grown-up to bake for 30–35 minutes until a toothpick comes out clean.", "Cool completely, layer with cream-cheese frosting, and admire that red velvet glow!"],
+    tip: "Eggless cakes like a gentle fold — overmixing makes them dense instead of velvety.",
+    source: "Cakes by MK",
+    sourceUrl: "https://cakesbymk.com/",
+  },
+  mkloaf: {
+    name: "Chocolate Loaf Cake (Cakes by MK)",
+    emoji: "🍞",
+    time: "60 minutes",
+    difficulty: "Easy",
+    servings: "10 slices",
+    ingredients: ["1 1/2 cups all-purpose flour", "1/2 cup cocoa powder", "1 teaspoon baking powder", "1/2 teaspoon baking soda", "1/2 teaspoon salt", "1 cup sugar", "2 eggs", "1/2 cup vegetable oil", "3/4 cup buttermilk or yogurt", "1 teaspoon vanilla extract", "1/2 cup hot water", "Chocolate chips (optional crunch on top)"],
+    steps: ["Ask a grown-up to preheat the oven to 350°F (175°C) and line a loaf pan with parchment.", "Whisk flour, cocoa, baking powder, baking soda, and salt.", "Whisk sugar, eggs, oil, buttermilk, and vanilla until smooth.", "Fold in the dry ingredients, then stir in the hot water until glossy.", "Pour into the loaf pan and sprinkle chocolate chips on top if you like.", "Ask a grown-up to bake for 45–55 minutes until a toothpick comes out with a few moist crumbs.", "Cool for 15 minutes before lifting out of the pan.", "Slice thick, serve with milk, and enjoy your bakery-style loaf!"],
+    tip: "A parchment sling (paper hanging over the sides) makes lifting the loaf out easy.",
+    source: "Cakes by MK",
+    sourceUrl: "https://cakesbymk.com/",
+  },
+  nihari: {
+    name: "Beef Nihari",
+    emoji: "🍲",
+    time: "3 hours",
+    difficulty: "A Little Tricky",
+    servings: "6 bowls",
+    ingredients: ["1 kg beef shank (bong) pieces", "1/2 cup oil or ghee", "1 large onion, sliced", "2 tablespoons ginger-garlic paste", "3–4 tablespoons nihari masala", "1 teaspoon red chilli powder", "1/2 teaspoon turmeric", "Salt to taste", "1/2 cup whole-wheat flour (atta) mixed in water", "Julienned ginger, green chillies, lemon & coriander to serve"],
+    steps: ["Ask a grown-up to heat oil in a heavy pot and fry the onion until golden.", "Add beef and ginger-garlic paste. Fry until the meat changes colour.", "Add nihari masala, chilli, turmeric, and salt with a splash of water. Fry 5 minutes.", "Pour in 6–8 cups of water, cover, and simmer on low for 2–3 hours until the beef is fall-apart tender.", "Take out the cooked meat pieces and set aside.", "Slowly whisk the flour slurry into the gravy and simmer 15 minutes until glossy and thick.", "Return the meat, simmer 10 more minutes.", "Serve hot with ginger, chillies, lemon wedges, coriander, and warm naan!"],
+    tip: "Nihari tastes even better the next day — the flavours melt together overnight.",
+  },
+  biryani: {
+    name: "Chicken Biryani",
+    emoji: "🍛",
+    time: "1 hour 15 minutes",
+    difficulty: "A Little Tricky",
+    servings: "6 plates",
+    ingredients: ["3 cups basmati rice, soaked 30 minutes", "750 g chicken pieces", "1 cup yogurt", "3 onions, thinly sliced and fried golden", "2 tomatoes, chopped", "2 tablespoons ginger-garlic paste", "3 tablespoons biryani masala", "Whole spices: bay leaves, cinnamon, cardamom, cloves", "Fresh mint & coriander", "Saffron or yellow food colour in milk", "4 tablespoons oil or ghee", "Salt to taste"],
+    steps: ["Marinate the chicken with yogurt, ginger-garlic paste, biryani masala, and salt for 30 minutes.", "Ask a grown-up to boil the rice with whole spices until 70% cooked, then drain.", "In a big pot, cook the marinated chicken with tomatoes and half the fried onions until the oil separates.", "Layer rice over the chicken: rice, fried onions, mint, coriander — repeat!", "Drizzle the saffron milk and ghee on top.", "Cover tightly and steam (dum) on low heat for 20–25 minutes.", "Rest 10 minutes, then gently fluff and mix the layers.", "Serve with raita and salad. Biryani party!"],
+    tip: "70% cooked rice finishes perfectly in the steam — soft grains, never mushy.",
+  },
+  butterchicken: {
+    name: "Butter Chicken",
+    emoji: "🧈",
+    time: "45 minutes",
+    difficulty: "Easy",
+    servings: "4 bowls",
+    ingredients: ["500 g boneless chicken cubes", "1/2 cup yogurt", "1 tablespoon ginger-garlic paste", "1 teaspoon each: red chilli, turmeric, garam masala", "3 tablespoons butter", "1 cup tomato purée", "1/2 cup cream", "1 teaspoon kasuri methi (dried fenugreek)", "1 teaspoon honey or sugar", "Salt to taste"],
+    steps: ["Marinate chicken with yogurt, ginger-garlic, spices, and salt for 30 minutes.", "Ask a grown-up to sear the chicken in 1 tablespoon butter until lightly charred. Set aside.", "Melt the remaining butter, add tomato purée, and cook until the butter shines on top.", "Blend the sauce smooth if you like (grown-up job!), then return to the pan.", "Stir in cream, honey, and crushed kasuri methi.", "Add the chicken and simmer 8–10 minutes until cooked through.", "Swirl extra cream on top.", "Serve with naan or rice and scoop up every drop!"],
+    tip: "A tiny bit of honey balances the tomatoes — that's the restaurant secret.",
+  },
+  daal: {
+    name: "Daal (Yellow Lentils)",
+    emoji: "🍵",
+    time: "40 minutes",
+    difficulty: "Easy",
+    servings: "4 bowls",
+    ingredients: ["1 cup moong or masoor daal, washed", "3 cups water", "1/2 teaspoon turmeric", "1 teaspoon red chilli powder", "Salt to taste", "For baghaar (tempering): 3 tablespoons oil or ghee", "4 garlic cloves, sliced", "1 teaspoon cumin seeds", "2–3 whole red chillies", "Fresh coriander & lemon to serve"],
+    steps: ["Put the washed daal, water, turmeric, chilli, and salt in a pot.", "Ask a grown-up to boil, skim the foam, then simmer 25–30 minutes until soft and creamy.", "Whisk gently for a smooth texture and adjust the water to your liking.", "For the baghaar: heat oil, add cumin, garlic, and red chillies until the garlic is golden.", "Pour the sizzling baghaar over the daal — listen to that sizzle!", "Garnish with coriander and a squeeze of lemon.", "Serve with steamed rice or roti. Simple comfort food!"],
+    tip: "The garlic baghaar at the end is where all the magic flavour lives.",
+  },
+  samosa: {
+    name: "Samosa",
+    emoji: "🥟",
+    time: "1 hour",
+    difficulty: "A Little Tricky",
+    servings: "12 samosas",
+    ingredients: ["2 cups all-purpose flour", "1/4 cup oil, 1 teaspoon ajwain & salt (for dough)", "3 potatoes, boiled & crumbled", "1/2 cup peas", "1 teaspoon each: cumin, coriander powder, chaat masala", "1/2 teaspoon red chilli & turmeric", "1 tablespoon ginger, grated", "Fresh coriander", "Oil for deep frying"],
+    steps: ["Rub oil into the flour, ajwain, and salt until crumbly, then knead a stiff dough with a little water. Rest 30 minutes.", "Heat a little oil, sizzle cumin and ginger, then add peas, potatoes, and all the spices. Cool the filling.", "Roll small ovals of dough, cut in half, and fold each half into a cone (seal the edge with water).", "Fill each cone with potato mixture and seal the top edge firmly.", "Ask a grown-up to deep-fry on medium-low until golden and bubbly-crisp (about 10 minutes).", "Drain on paper towels.", "Serve hot with imli (tamarind) chutney. Crunch time!"],
+    tip: "Fry on low-medium heat — slow frying makes the crispiest, flakiest crust.",
+  },
+  mangolassi: {
+    name: "Mango Lassi",
+    emoji: "🥭",
+    time: "10 minutes",
+    difficulty: "Super Easy",
+    servings: "2 glasses",
+    ingredients: ["2 ripe mangoes (or 1 cup mango pulp)", "1 cup yogurt", "1/2 cup milk", "2–3 tablespoons sugar or honey", "A pinch of cardamom powder", "Ice cubes", "Crushed pistachios (optional topping)"],
+    steps: ["Wash the mangoes and ask a grown-up to help peel and chop them.", "Put mango, yogurt, milk, sugar, and cardamom in a blender.", "Blend until silky smooth.", "Taste — add more sugar if your mangoes are tangy!", "Pour over ice in tall glasses.", "Sprinkle pistachios on top.", "Sip your sunshine smoothie!"],
+    tip: "Super-ripe, fragrant mangoes make the sweetest lassi with almost no sugar.",
+  },
+  masalachai: {
+    name: "Masala Chai",
+    emoji: "☕",
+    time: "15 minutes",
+    difficulty: "Super Easy",
+    servings: "2 cups",
+    ingredients: ["2 cups water", "1 cup milk", "2 teaspoons black tea (or 2 tea bags)", "2–3 teaspoons sugar", "1 small piece ginger, crushed", "3 cardamom pods, crushed", "1 small cinnamon stick", "2 cloves (optional)"],
+    steps: ["Ask a grown-up to simmer water with ginger, cardamom, cinnamon, and cloves for 3 minutes.", "Add the tea and boil for 2 minutes until deep amber.", "Pour in the milk and sugar.", "Bring to a rolling boil, then lower the heat. Repeat this rise-and-fall twice for a strong karak flavour.", "Strain into cups with a small sieve.", "Serve piping hot with biscuits for dunking!"],
+    tip: "Crushing the spices fresh releases way more flavour than pre-ground mixes.",
+  },
+  haleem: {
+    name: "Haleem",
+    emoji: "🍲",
+    time: "3 hours",
+    difficulty: "A Little Tricky",
+    servings: "8 bowls",
+    ingredients: ["500 g beef or chicken", "1 cup cracked wheat (daliya), soaked overnight", "1/4 cup each: chana daal, masoor daal, moong daal & barley", "2 onions, fried golden", "2 tablespoons ginger-garlic paste", "3 tablespoons haleem masala", "1/2 cup oil or ghee", "Salt to taste", "Ginger, green chillies, lemon, coriander & fried onions to serve"],
+    steps: ["Cook the soaked wheat and lentils in plenty of water until completely soft and mushy.", "In another pot, cook the meat with ginger-garlic, haleem masala, and salt until tender; shred it finely.", "Blend the wheat-lentil mix until smooth and porridge-like (grown-up job!).", "Combine everything in one big pot and stir on low heat for 30–45 minutes, mashing as you go — haleem should be stretchy and gluey!", "Stir in half the fried onions and a drizzle of ghee.", "Serve in bowls topped with ginger, chillies, lemon, coriander, and crispy onions."],
+    tip: "Constant stirring at the end gives haleem its famous stretchy texture.",
+  },
+  seekhkabab: {
+    name: "Seekh Kabab",
+    emoji: "🍢",
+    time: "40 minutes + marinating",
+    difficulty: "A Little Tricky",
+    servings: "8 kababs",
+    ingredients: ["500 g minced beef or chicken", "1 onion, very finely chopped & squeezed dry", "2 tablespoons ginger-garlic paste", "2 green chillies, minced", "1 tablespoon seekh kabab masala", "1 teaspoon roasted cumin & coriander powder", "2 tablespoons fresh coriander", "1 tablespoon lemon juice", "Salt to taste", "Skewers & a little oil"],
+    steps: ["Mix everything in a bowl and knead for 5 minutes until sticky and smooth.", "Chill the mixture for 1 hour — cold mince holds the skewer better!", "With wet hands, mould sausage shapes around the skewers.", "Ask a grown-up to grill or pan-fry, turning every 2 minutes, until charred at the edges (10–12 minutes).", "Rest 2 minutes, then slide off the skewers.", "Serve with naan, onion rings, and mint chutney!"],
+    tip: "Squeeze every drop of water from the onion or the kababs will fall apart.",
+  },
+  chaplikabab: {
+    name: "Chapli Kabab",
+    emoji: "🥩",
+    time: "45 minutes",
+    difficulty: "A Little Tricky",
+    servings: "8 kababs",
+    ingredients: ["500 g minced beef", "1 tomato, finely chopped (+ slices for topping)", "1 onion, finely chopped", "2 tablespoons coriander seeds, crushed", "1 tablespoon pomegranate seeds (anardana), crushed", "2 green chillies, chopped", "1 egg + 2 tablespoons gram flour (binder)", "1 teaspoon each: cumin, red chilli flakes, garam masala", "Salt to taste", "Oil for shallow frying"],
+    steps: ["Mix the mince with all the spices, onion, tomato, chillies, egg, and gram flour.", "Rest the mixture for 30 minutes.", "Shape into large, flat patties with wet hands.", "Press a tomato slice into the top of each patty — chapli kabab signature!", "Ask a grown-up to shallow-fry on medium heat for 4–5 minutes per side until crisp and cooked.", "Drain briefly on paper towels.", "Serve hot with naan, raita, and lemon wedges. Peshawar style!"],
+    tip: "Flat patties cook evenly and get those famous crispy edges.",
+  },
+  pulao: {
+    name: "Chicken Pulao",
+    emoji: "🍚",
+    time: "1 hour",
+    difficulty: "Easy",
+    servings: "6 plates",
+    ingredients: ["3 cups basmati rice, soaked 30 minutes", "750 g chicken pieces", "2 onions, sliced", "1/2 cup yogurt", "2 tablespoons ginger-garlic paste", "Whole spices: bay leaf, cinnamon, black cardamom, cloves, cumin", "2 teaspoons coriander powder", "4 1/2 cups chicken stock or water", "4 tablespoons oil or ghee", "Salt to taste", "Fried onions & coriander to serve"],
+    steps: ["Ask a grown-up to fry the onions in ghee until golden; set half aside for garnish.", "Add whole spices and ginger-garlic, sizzle for 30 seconds.", "Add chicken and fry until it turns white-golden.", "Stir in yogurt, coriander powder, and salt. Cook until the oil separates.", "Pour in the stock, bring to a boil, then add the drained rice.", "Cook uncovered until most water is absorbed, then cover and steam on low for 15 minutes.", "Fluff gently and top with the reserved fried onions.", "Serve with raita and salad!"],
+    tip: "Pulao gets its colour from golden fried onions — take your time browning them.",
+  },
+  mandi: {
+    name: "Chicken Mandi",
+    emoji: "🍗",
+    time: "1 hour 30 minutes",
+    difficulty: "A Little Tricky",
+    servings: "6 plates",
+    ingredients: ["1 whole chicken or 750 g legs", "Mandi spice: 1 tablespoon each coriander & cumin, 1 teaspoon each turmeric, black pepper, cardamom, cinnamon", "3 cups basmati rice, soaked", "2 onions, sliced & fried", "4 cups chicken stock", "A pinch of saffron in warm milk", "Raisins & almonds, fried (topping)", "1 small piece of charcoal + 1 teaspoon ghee (for smoke, grown-up job!)", "Salt to taste"],
+    steps: ["Rub the chicken with mandi spices and salt; marinate 30 minutes.", "Ask a grown-up to grill, roast, or steam the chicken until juicy and cooked through.", "Cook the rice: boil stock with spices, add drained rice, cook until tender, then drizzle saffron milk.", "Rest the chicken on top of the rice in the pot.", "Smoke trick (grown-ups only!): place hot charcoal in a small bowl on the rice, drizzle ghee, cover fast for 5 minutes.", "Uncover — hello, smoky mandi aroma!", "Serve on a big platter: rice first, chicken on top, shower with fried onions, raisins, and almonds."],
+    tip: "The charcoal smoke is what makes mandi taste like mandi — never skip it (grown-ups handle it!).",
+  },
+  karahi: {
+    name: "Chicken Karahi",
+    emoji: "🍳",
+    time: "40 minutes",
+    difficulty: "Easy",
+    servings: "4 portions",
+    ingredients: ["750 g chicken pieces (karahi cut)", "1/2 cup oil or ghee", "5 tomatoes, halved", "2 tablespoons ginger-garlic paste", "2 teaspoons crushed black pepper", "1 teaspoon red chilli flakes", "1 teaspoon roasted cumin, crushed", "Salt to taste", "Julienned ginger, green chillies & coriander to finish"],
+    steps: ["Ask a grown-up to heat ghee in a karahi or wok until hot.", "Fry the chicken with ginger-garlic on high heat until it changes colour.", "Add the tomato halves skin-side up, cover for 5 minutes, then peel off the skins with tongs.", "Mash the tomatoes into the chicken and fry on high heat until the ghee separates.", "Add black pepper, chilli flakes, cumin, and salt. Fry 3 more minutes.", "Finish with ginger juliennes, chillies, and coriander.", "Serve sizzling with hot naan straight from the karahi!"],
+    tip: "Real karahi has NO onions or yogurt — just tomatoes, chicken, and bold spices.",
+  },
+  roohafza: {
+    name: "Rooh Afza Cooler",
+    emoji: "🌹",
+    time: "5 minutes",
+    difficulty: "Super Easy",
+    servings: "2 glasses",
+    ingredients: ["3 tablespoons Rooh Afza syrup", "2 cups cold water or milk", "1 teaspoon lemon juice (for water version)", "Ice cubes", "Mint leaves", "Basil seeds (tukhmalanga), soaked, optional"],
+    steps: ["Fill two tall glasses with ice cubes.", "Pour Rooh Afza syrup over the ice.", "Top with cold water (classic) or cold milk (creamy version).", "Add a squeeze of lemon to the water version.", "Stir until the colour is a beautiful ruby pink.", "Add soaked basil seeds and a mint leaf if you like.", "Sip the coolest pink drink ever!"],
+    tip: "Freeze Rooh Afza in ice-cube trays for pink ice that never waters your drink down.",
+  },
+  frenchtoast: {
+    name: "French Toast",
+    emoji: "🍞",
+    time: "15 minutes",
+    difficulty: "Super Easy",
+    servings: "4 slices",
+    ingredients: ["4 thick bread slices", "2 eggs", "1/2 cup milk", "1 tablespoon sugar", "1/2 teaspoon cinnamon", "1 teaspoon vanilla extract", "Butter for the pan", "Maple syrup, berries & powdered sugar to serve"],
+    steps: ["Whisk eggs, milk, sugar, cinnamon, and vanilla in a shallow bowl.", "Dip each bread slice for about 10 seconds per side — soaked but not falling apart!", "Ask a grown-up to melt butter in a pan on medium heat.", "Cook each slice 2–3 minutes per side until golden and a little crispy.", "Stack on a plate and dust with powdered sugar.", "Drizzle with maple syrup and add berries.", "Bon appétit — breakfast like a Paris café!"],
+    tip: "Day-old or thick bread soaks up the custard without going soggy.",
+  },
+
 };
 
 function normalize(text: string): string {
@@ -952,6 +1165,26 @@ const keywordMap: { keys: string[]; id: string }[] = [
   { keys: ["chicken", "chicken tender", "chicken tenders", "nugget", "nuggets"], id: "chicken" },
   { keys: ["cupcake", "cupcakes"], id: "cupcake" },
   { keys: ["burrito", "burritos"], id: "burrito" },
+  { keys: ["tres leches cake", "tres leches", "three milk cake", "three milks cake"], id: "tresleches" },
+  { keys: ["moist chocolate cake", "chocolate cake"], id: "mkchocolate" },
+  { keys: ["soft vanilla cake", "vanilla cake"], id: "mkvanilla" },
+  { keys: ["eggless red velvet cake", "red velvet cake", "red velvet", "eggless cake"], id: "mkredvelvet" },
+  { keys: ["chocolate loaf cake", "chocolate loaf", "loaf cake"], id: "mkloaf" },
+  { keys: ["beef nihari", "nihari"], id: "nihari" },
+  { keys: ["chicken biryani", "biryani"], id: "biryani" },
+  { keys: ["butter chicken"], id: "butterchicken" },
+  { keys: ["daal", "dal", "dhal", "lentil daal", "yellow lentils"], id: "daal" },
+  { keys: ["samosa", "samosas"], id: "samosa" },
+  { keys: ["mango lassi", "lassi"], id: "mangolassi" },
+  { keys: ["masala chai", "chai", "chai tea", "karak chai"], id: "masalachai" },
+  { keys: ["haleem"], id: "haleem" },
+  { keys: ["seekh kabab", "seekh kebab"], id: "seekhkabab" },
+  { keys: ["chapli kabab", "chapli kebab"], id: "chaplikabab" },
+  { keys: ["chicken pulao", "pulao", "pilaf", "yakhni pulao"], id: "pulao" },
+  { keys: ["chicken mandi", "mandi"], id: "mandi" },
+  { keys: ["chicken karahi", "karahi", "kadai chicken"], id: "karahi" },
+  { keys: ["rooh afza", "roohafza", "roo afsa"], id: "roohafza" },
+  { keys: ["french toast"], id: "frenchtoast" },
 ];
 
 function titleCase(text: string): string {
@@ -962,288 +1195,112 @@ function titleCase(text: string): string {
     .join(" ");
 }
 
+const GENERIC_SINGLE = new Set(["cake", "rice", "soup", "chicken", "egg", "eggs", "fish", "meat", "drink", "juice"]);
+
+type GenericKind = "meat" | "rice" | "curry" | "soup" | "dessert" | "bread" | "drink" | "salad" | "bbq" | "pasta" | "desi_sweet" | "snack" | "egg";
+
+function detectGenericKind(lowerName: string): GenericKind {
+  if (/gulab jamun|jalebi|barfi|laddu|ladoo|halwa|kulfi|kheer|rabri|mithai|rasmalai|shahi tukray/.test(lowerName)) return "desi_sweet";
+  if (/bbq|barbecue|grill|kebab|kabab|tikka|seekh|boti|skewer/.test(lowerName)) return "bbq";
+  if (/curry|masala|handi|korma|karahi|vindaaloo|vindaloo|salan/.test(lowerName)) return "curry";
+  if (/biryani|pulao|pilaf|risotto|rice|jollof|paella/.test(lowerName)) return "rice";
+  if (/omelette|omelet|egg|frittata|quiche/.test(lowerName)) return "egg";
+  if (/soup|stew|broth|chowder|bisque|shorba/.test(lowerName)) return "soup";
+  if (/pasta|spaghetti|noodle|macaroni|fettuccine|penne|lasagna|ramen/.test(lowerName)) return "pasta";
+  if (/bread|paratha|naan|roti|bun|sandwich|toast|roll|puri/.test(lowerName)) return "bread";
+  if (/juice|drink|shake|smoothie|lassi|chai|tea|coffee|mocktail|sherbet|lemonade/.test(lowerName)) return "drink";
+  if (/salad|slaw|raita/.test(lowerName)) return "salad";
+  if (/cake|cookie|brownie|pudding|pie|ice cream|custard|dessert|sweet|chocolate|trifle|mousse/.test(lowerName)) return "dessert";
+  if (/chicken|beef|lamb|mutton|fish|salmon|prawn|shrimp|meat|steak|turkey/.test(lowerName)) return "meat";
+  return "snack";
+}
+
 function generateGenericRecipe(foodName: string): Recipe {
-  const name = titleCase(foodName);
-  const emojis = ["🍽️", "😋", "🌟", "👨‍🍳", "🎉", "✨", "🥘", "🍴", "👩‍🍳"];
-  const emoji = emojis[Math.abs(hashCode(foodName)) % emojis.length];
+  const name = titleCase(normalize(foodName)) || "Something Yummy";
   const lowerName = name.toLowerCase();
-
-  // Detect category and provide real template ingredients and steps
-  const isSoup = /soup|stew|broth|chowder|bisque/.test(lowerName);
-  const isPasta = /pasta|noodle|spaghetti|macaroni|fettuccine/.test(lowerName);
-  const isRice = /rice|biryani|pilaf|risotto/.test(lowerName);
-  const isMeat = /chicken|beef|pork|lamb|steak|meat|turkey/.test(lowerName);
-  const isFish = /fish|salmon|tuna|shrimp|prawn|seafood|crab/.test(lowerName);
-  const isVeggie = /vegetable|veggie|tofu|bean|lentil|chickpea/.test(lowerName);
-  const isBaked = /cake|bread|muffin|cookie|pie|brownie|cupcake/.test(lowerName);
-  const isSalad = /salad|bowl|wrap/.test(lowerName);
-  const isSandwich = /sandwich|burger|wrap|sub/.test(lowerName);
-  const isDrink = /juice|smoothie|milkshake|tea|coffee|drink/.test(lowerName);
-
-  let ingredients: string[] = [];
-  let steps: string[] = [];
-  let time = "30 minutes";
-  let difficulty: Recipe["difficulty"] = "Easy";
-  let tip = "Every great chef started by trying new things. You've got this!";
-
-  if (isSoup) {
-    ingredients = [
-      `2 cups chopped main ingredient for ${name}`,
-      "1 tablespoon oil or butter",
-      "1 onion, chopped",
-      "2 cloves garlic, minced",
-      "4 cups broth (vegetable, chicken, or beef)",
-      "1 cup chopped vegetables (carrots, celery, etc.)",
-      "1 teaspoon dried herbs (thyme, oregano, or basil)",
-      "Salt and pepper to taste",
-      "Fresh herbs for garnish",
-    ];
-    steps = [
-      `Ask a grown-up to help with the stove — we're making ${name}!`,
-      "Wash all vegetables and chop them into bite-sized pieces.",
-      "Heat oil in a big pot over medium heat.",
-      "Add onion and cook for 5 minutes until soft.",
-      "Add garlic and stir for 30 seconds until it smells amazing.",
-      "Add the main ingredient and vegetables. Stir for 2 minutes.",
-      "Pour in the broth and add herbs, salt, and pepper.",
-      "Bring to a boil, then turn heat to low and simmer for 20 minutes.",
-      "Taste and add more salt if needed.",
-      "Ladle into bowls and garnish with fresh herbs. Serve hot!",
-    ];
-    time = "40 minutes";
-    tip = "Soup tastes even better the next day — save some for tomorrow!";
-  } else if (isPasta) {
-    ingredients = [
-      "8 oz pasta of your choice",
-      "2 tablespoons olive oil or butter",
-      "2 cloves garlic, minced",
-      "1 cup sauce (tomato, cream, or pesto)",
-      "1/2 cup grated cheese (parmesan or cheddar)",
-      "Salt and pepper to taste",
-      "Fresh herbs (basil or parsley)",
-      "Optional: vegetables or protein",
-    ];
-    steps = [
-      `Ask a grown-up to help with boiling water!`,
-      "Bring a big pot of salted water to a boil.",
-      "Add pasta and cook according to package (usually 8–10 minutes).",
-      "While pasta cooks, heat oil in a pan and sauté garlic for 30 seconds.",
-      "Add your sauce and heat through.",
-      "Drain the pasta (ask a grown-up to help with the hot water!).",
-      "Toss pasta with the sauce.",
-      "Add cheese and toss again until melty.",
-      "Season with salt and pepper. Garnish with fresh herbs!",
-      "Serve hot and enjoy your delicious pasta!",
-    ];
-    tip = "Save a little pasta water — add it to sauce if it's too thick!";
-  } else if (isRice) {
-    ingredients = [
-      "2 cups rice (basmati, jasmine, or your choice)",
-      "3 cups water or broth",
-      "1 tablespoon oil or butter",
-      "1 onion, chopped",
-      "2 cloves garlic, minced",
-      "1 teaspoon spices (cumin, turmeric, or curry powder)",
-      "1 cup vegetables or protein",
-      "Salt to taste",
-      "Fresh herbs for garnish",
-    ];
-    steps = [
-      `Ask a grown-up to help with the stove!`,
-      "Rinse rice in a strainer until water runs clear.",
-      "Heat oil in a pot and sauté onion until soft (about 5 minutes).",
-      "Add garlic and spices. Stir for 30 seconds.",
-      "Add rice and stir for 1 minute to coat with oil and spices.",
-      "Pour in water or broth. Add salt.",
-      "Bring to a boil, then turn heat to low and cover.",
-      "Cook for 15–20 minutes without lifting the lid!",
-      "Let it rest for 5 minutes, then fluff with a fork.",
-      "Garnish with fresh herbs and serve!",
-    ];
-    tip = "Don't lift the lid while rice is cooking — it needs the steam!";
-  } else if (isMeat || isFish) {
-    ingredients = [
-      `1 pound ${lowerName} or your choice of protein`,
-      "2 tablespoons oil",
-      "1 teaspoon salt",
-      "1/2 teaspoon pepper",
-      "1 teaspoon dried herbs (rosemary, thyme, or oregano)",
-      "2 cloves garlic, minced",
-      "1 tablespoon lemon juice or vinegar",
-      "Vegetables for serving",
-    ];
-    steps = [
-      `Ask a grown-up to help with cutting and cooking!`,
-      "Wash your hands before handling raw meat or fish.",
-      "Pat the protein dry with paper towels.",
-      "Mix oil, salt, pepper, herbs, garlic, and lemon juice in a bowl.",
-      "Rub the mixture all over the protein.",
-      "Let it sit for 15 minutes to absorb flavors.",
-      "Ask a grown-up to heat a pan or grill over medium-high heat.",
-      "Cook for 4–6 minutes per side (depending on thickness).",
-      "Let it rest for 5 minutes before cutting.",
-      "Serve with your favorite vegetables!",
-    ];
-    difficulty = "A Little Tricky";
-    tip = "Let meat rest after cooking — it keeps the juices inside!";
-  } else if (isVeggie) {
-    ingredients = [
-      `2 cups chopped vegetables for ${name}`,
-      "2 tablespoons olive oil",
-      "2 cloves garlic, minced",
-      "1 teaspoon dried herbs",
-      "1/2 teaspoon salt",
-      "1/4 teaspoon pepper",
-      "1/4 cup cheese or nuts (optional)",
-      "Fresh herbs for garnish",
-    ];
-    steps = [
-      `Ask a grown-up to help with cutting!`,
-      "Wash and chop all vegetables into bite-sized pieces.",
-      "Heat oil in a pan over medium heat.",
-      "Add garlic and stir for 30 seconds.",
-      "Add vegetables and stir-fry for 5–7 minutes until tender-crisp.",
-      "Add herbs, salt, and pepper. Stir well.",
-      "If using cheese or nuts, add them in the last minute.",
-      "Taste and adjust seasoning.",
-      "Garnish with fresh herbs.",
-      "Serve hot as a side dish or over rice!",
-    ];
-    tip = "Don't overcook vegetables — they should still have a little crunch!";
-  } else if (isBaked) {
-    ingredients = [
-      "2 cups all-purpose flour",
-      "1 teaspoon baking powder",
-      "1/2 teaspoon salt",
-      "1/2 cup butter, softened",
-      "1 cup sugar",
-      "2 eggs",
-      "1 teaspoon vanilla extract",
-      "1/2 cup milk",
-      "Optional: chocolate chips, nuts, or fruit",
-    ];
-    steps = [
-      `Ask a grown-up to preheat oven to 350°F (175°C)!`,
-      "Grease your baking pan or line with parchment paper.",
-      "In a bowl, whisk flour, baking powder, and salt.",
-      "In another bowl, beat butter and sugar until fluffy.",
-      "Add eggs one at a time, then vanilla.",
-      "Mix in half the flour, then milk, then remaining flour.",
-      "Fold in any extras like chocolate chips or nuts.",
-      "Pour batter into the pan.",
-      "Bake for 25–35 minutes (check with a toothpick — it should come out clean!).",
-      "Let cool before cutting or frosting!",
-    ];
-    time = "45 minutes";
-    tip = "Don't open the oven door while baking — it can make your treat fall!";
-  } else if (isSalad) {
-    ingredients = [
-      `4 cups greens (lettuce, spinach, or arugula)`,
-      "1 cup chopped vegetables (tomatoes, cucumbers, peppers)",
-      "1/2 cup protein (chicken, beans, or cheese)",
-      "1/4 cup nuts or seeds",
-      "1/4 cup dressing (vinaigrette or your favorite)",
-      "Salt and pepper to taste",
-    ];
-    steps = [
-      `Wash your hands and all vegetables!`,
-      "Wash and dry the greens thoroughly.",
-      "Chop all vegetables into bite-sized pieces.",
-      "Put greens in a big bowl.",
-      "Add vegetables, protein, and nuts/seeds.",
-      "Drizzle dressing over the top.",
-      "Toss everything together gently.",
-      "Taste and add salt/pepper if needed.",
-      "Serve immediately while fresh and crispy!",
-    ];
-    time = "15 minutes";
-    difficulty = "Super Easy";
-    tip = "Add dressing right before serving — otherwise the salad gets soggy!";
-  } else if (isSandwich) {
-    ingredients = [
-      "2 slices bread, bun, or wrap",
-      "2 tablespoons spread (mayo, mustard, hummus, or butter)",
-      "2–3 slices protein (meat, cheese, or tofu)",
-      "Lettuce leaves",
-      "Tomato slices",
-      "Onion slices (optional)",
-      "Pickles or other veggies",
-      "Salt and pepper to taste",
-    ];
-    steps = [
-      `Wash your hands!`,
-      "Lay out bread on a clean plate.",
-      "Spread your choice of spread on one or both slices.",
-      "Layer on protein, then cheese if using.",
-      "Add lettuce, tomato, onion, and pickles.",
-      "Season with a little salt and pepper.",
-      "Put the top slice of bread on and press gently.",
-      "Ask a grown-up to help cut it in half.",
-      "Serve with chips or fruit on the side!",
-    ];
-    time = "10 minutes";
-    difficulty = "Super Easy";
-    tip = "Toast the bread first for extra crunch and flavor!";
-  } else if (isDrink) {
-    ingredients = [
-      "2 cups liquid base (milk, juice, or water)",
-      "1 cup fruit (fresh or frozen)",
-      "1–2 tablespoons sweetener (honey, sugar, or syrup)",
-      "Ice cubes (optional)",
-      "Fresh mint or lemon slice for garnish",
-    ];
-    steps = [
-      `Ask a grown-up to help with the blender if needed!`,
-      "Wash all fruits thoroughly.",
-      "Chop fruits into chunks if using fresh.",
-      "Put liquid base, fruit, and sweetener in a blender.",
-      "Blend on high for 1–2 minutes until smooth.",
-      "Taste and add more sweetener if needed.",
-      "Pour into glasses over ice if using.",
-      "Garnish with mint or a lemon slice.",
-      "Serve immediately and enjoy your refreshing drink!",
-    ];
-    time = "5 minutes";
-    difficulty = "Super Easy";
-    tip = "Frozen fruit makes drinks extra cold and thick — no ice needed!";
-  } else {
-    // Generic template for anything else
-    ingredients = [
-      `Main ingredients for ${name}`,
-      "2 tablespoons oil or butter",
-      "1 onion, chopped",
-      "2 cloves garlic, minced",
-      "1 teaspoon salt",
-      "1/2 teaspoon pepper",
-      "1 teaspoon herbs or spices of your choice",
-      "1/2 cup liquid (water, broth, or sauce)",
-      "Fresh herbs for garnish",
-    ];
-    steps = [
-      `Ask a grown-up to help you make ${name}!`,
-      "Wash your hands and gather all ingredients.",
-      "Chop vegetables and prepare main ingredients.",
-      "Heat oil in a pan over medium heat.",
-      "Add onion and cook for 5 minutes until soft.",
-      "Add garlic and stir for 30 seconds.",
-      "Add main ingredients and cook for 5–10 minutes.",
-      "Add herbs, spices, salt, pepper, and liquid.",
-      "Simmer for 10–15 minutes until everything is cooked through.",
-      "Taste and adjust seasoning. Garnish and serve!",
-    ];
-    tip = "Cooking is all about experimenting — don't be afraid to try new things!";
-  }
-
-  return {
-    name: `${name}`,
-    emoji,
-    time,
-    difficulty,
-    servings: "2–4 people",
-    ingredients,
-    steps,
-    tip,
+  const kind = detectGenericKind(lowerName);
+  const base: Record<GenericKind, { emoji: string; time: string; difficulty: Recipe["difficulty"]; ingredients: string[]; steps: string[]; tip: string }> = {
+    meat: {
+      emoji: "🍗", time: "40 minutes", difficulty: "A Little Tricky",
+      ingredients: [`500 g main protein for ${name}`, "2 tablespoons oil or ghee", "1 onion, sliced", "1 tablespoon ginger-garlic paste", "1 teaspoon salt & 1/2 teaspoon black pepper", "1 teaspoon favourite spice mix", "1/2 cup water or stock", "Fresh herbs & lemon to serve"],
+      steps: ["Ask a grown-up to help with the stove and any cutting.", "Season the protein with salt, pepper, and spices. Rest 15 minutes.", "Heat oil in a pan and fry the onion until golden.", "Add ginger-garlic paste, sizzle 30 seconds.", "Add the protein and fry on high heat until it changes colour.", "Add water or stock, cover, and simmer until fully cooked and tender.", "Fry uncovered for 2–3 minutes to thicken the sauce.", `Finish with herbs and lemon. Your ${name} is ready!`],
+      tip: "Rest cooked meat 5 minutes before cutting — it stays juicy.",
+    },
+    rice: {
+      emoji: "🍚", time: "45 minutes", difficulty: "Easy",
+      ingredients: ["2 cups basmati rice, soaked 30 minutes", "3 1/2 cups water or stock", "2 tablespoons oil or ghee", "1 onion, sliced", "Whole spices: bay leaf, cinnamon, cardamom, cumin", "1 teaspoon salt (to taste)", "1 cup vegetables or cooked protein", "Fried onions & herbs to serve"],
+      steps: ["Fry the onion in ghee until golden — this is the flavour base.", "Add whole spices and sizzle for 30 seconds.", "Add vegetables or protein and fry 3 minutes.", "Pour in water or stock and salt; bring to a boil.", "Add the drained rice and cook until most water is absorbed.", "Cover tightly and steam on the lowest heat for 15 minutes — no peeking!", "Rest 5 minutes, then fluff gently with a fork.", `Top with fried onions and herbs. Enjoy your ${name}!`],
+      tip: "The steam finish (dum) makes every grain separate and fluffy.",
+    },
+    curry: {
+      emoji: "🍛", time: "45 minutes", difficulty: "Easy",
+      ingredients: [`500 g main ingredient for ${name}`, "3 tablespoons oil or ghee", "1 onion, finely chopped", "1 tablespoon ginger-garlic paste", "2 tomatoes, puréed", "1/2 cup yogurt, whisked", "2 teaspoons curry/masala powder, 1/2 teaspoon turmeric", "Salt to taste", "Cream (optional) & coriander to finish"],
+      steps: ["Heat oil and fry the onion until deep golden.", "Add ginger-garlic paste and fry 1 minute.", "Add tomato purée and spices; cook until the oil separates at the edges.", "Lower the heat and whisk in the yogurt slowly so it doesn't split.", "Add the main ingredient and a splash of water.", "Cover and simmer until fully cooked and the sauce is glossy.", "Swirl in cream if you like and sprinkle coriander.", `Serve your ${name} with rice or naan!`],
+      tip: "Wait for 'oil separates' — that's how you know the curry base is perfect.",
+    },
+    soup: {
+      emoji: "🍲", time: "40 minutes", difficulty: "Easy",
+      ingredients: [`2 cups main ingredient for ${name}, chopped`, "1 tablespoon butter or oil", "1 onion & 2 garlic cloves, chopped", "4 cups stock or water", "1 cup mixed vegetables", "1 teaspoon dried herbs", "Salt & pepper to taste", "Cream or lemon to finish"],
+      steps: ["Ask a grown-up to melt butter in a big pot.", "Cook onion 5 minutes until soft, add garlic for 30 seconds.", "Add the main ingredient and vegetables; stir 2 minutes.", "Pour in the stock, add herbs, salt, and pepper.", "Boil gently, then simmer 20 minutes.", "Blend part of the soup if you like it creamy (grown-up job!).", "Taste and adjust seasoning.", `Ladle your ${name} into bowls and serve hot!`],
+      tip: "Soup tastes even better the next day — make extra!",
+    },
+    dessert: {
+      emoji: "🍰", time: "50 minutes", difficulty: "Easy",
+      ingredients: ["2 cups all-purpose flour (or cake flour)", "1 1/2 teaspoons baking powder & 1/2 teaspoon salt", "3/4 cup sugar + more to taste", "1/2 cup soft butter or oil", "2 eggs (or 1/2 cup yogurt for eggless)", "3/4 cup milk", "1 teaspoon vanilla extract", `Star flavour for ${name} (cocoa, fruit, or essence)`],
+      steps: ["Ask a grown-up to preheat the oven to 350°F (175°C) and prepare your pan.", "Whisk the flour, baking powder, and salt.", "Beat butter and sugar until pale and fluffy.", "Beat in eggs and vanilla.", "Fold in flour alternating with milk, then add your star flavour.", "Pour into the pan and smooth the top.", "Bake until a toothpick comes out clean (25–40 minutes, pan-size dependent).", `Cool, decorate, and serve your ${name}!`],
+      tip: "Room-temperature ingredients = softer, fluffier bakes every time.",
+    },
+    bread: {
+      emoji: "🍞", time: "30 minutes", difficulty: "Easy",
+      ingredients: ["2 cups flour (or ready bread/wraps)", "1 teaspoon instant yeast (if baking fresh)", "3/4 cup warm water", "1 teaspoon sugar & 1/2 teaspoon salt", "1 tablespoon oil or butter", `Filling/flavour of your choice for ${name}`, "Extra butter for brushing"],
+      steps: ["If using ready bread, warm it gently and jump to the filling step!", "For fresh dough: mix flour, yeast, sugar, salt, water, and oil; knead 8 minutes.", "Rest the dough covered for 30–45 minutes until puffy.", "Roll or shape as needed for your dish.", "Add filling or flavouring.", "Ask a grown-up to bake, toast, or pan-fry until golden.", "Brush with butter for extra shine and taste.", `Serve your warm ${name} right away!`],
+      tip: "Warm (not hot) water wakes the yeast without harming it.",
+    },
+    drink: {
+      emoji: "🥤", time: "10 minutes", difficulty: "Super Easy",
+      ingredients: ["2 cups cold base: milk, water, or juice", `1 cup star fruit/flavour for ${name}`, "2–3 tablespoons sugar or honey (to taste)", "A pinch of cardamom or a squeeze of lemon", "Lots of ice", "Mint or fruit slices to serve"],
+      steps: ["Wash and prepare your star ingredient (peel/chop with a grown-up's help).", "Put everything except ice in a blender or jug.", "Blend or stir until smooth and frothy.", "Taste and adjust sweetness.", "Pour over lots of ice in tall glasses.", "Garnish like a café pro.", `Sip your refreshing ${name}!`],
+      tip: "Frozen fruit makes drinks thick and frosty without watering them down.",
+    },
+    salad: {
+      emoji: "🥗", time: "15 minutes", difficulty: "Super Easy",
+      ingredients: ["3 cups crisp greens or chopped vegetables", `1 cup star ingredient for ${name}`, "1/2 cup protein or cheese (optional)", "3 tablespoons olive oil or yogurt", "1 tablespoon lemon juice or vinegar", "Salt, pepper & a pinch of sugar", "Nuts, seeds, or croutons for crunch"],
+      steps: ["Wash everything really well and dry the greens.", "Chop ingredients into bite-size pieces (grown-ups help with knives!).", "Whisk oil/yogurt, lemon, salt, pepper, and sugar into a dressing.", "Put everything in a big bowl.", "Pour the dressing over just before serving.", "Toss gently so every bite is coated.", "Sprinkle crunch on top.", `Serve your fresh ${name} immediately!`],
+      tip: "Dry greens hold dressing better — soggy leaves slide it right off.",
+    },
+    bbq: {
+      emoji: "🍢", time: "40 minutes + marinating", difficulty: "A Little Tricky",
+      ingredients: [`500 g meat or vegetables for ${name}, in chunks`, "1/2 cup yogurt", "1 tablespoon ginger-garlic paste", "1 tablespoon BBQ/tikka masala", "1 tablespoon lemon juice & 2 tablespoons oil", "Salt to taste", "Skewers, naan, onion & chutney to serve"],
+      steps: ["Mix yogurt, spices, lemon, oil, and salt into a marinade.", "Coat the chunks well and marinate at least 1 hour (overnight = best).", "Thread onto skewers with little gaps between pieces.", "Ask a grown-up to grill or broil, turning every few minutes and basting with oil.", "Cook until the edges char slightly and the centre is fully cooked.", "Rest 3 minutes so juices settle.", `Serve your smoky ${name} with naan and chutney!`],
+      tip: "Little charred edges = big BBQ flavour. Don't fear the dark bits!",
+    },
+    pasta: {
+      emoji: "🍝", time: "30 minutes", difficulty: "Easy",
+      ingredients: ["250 g pasta or noodles", "2 tablespoons olive oil or butter", "2 garlic cloves, sliced", `1 1/2 cups sauce/flavour base for ${name}`, "1/2 cup grated cheese", "Salt & pepper to taste", "Fresh basil or parsley"],
+      steps: ["Ask a grown-up to boil well-salted water for the pasta.", "Cook pasta 1 minute less than the packet says; save a cup of pasta water.", "Warm oil and garlic in a wide pan for 30 seconds.", "Add your sauce base and simmer 3 minutes.", "Add drained pasta with a splash of pasta water.", "Toss for 1–2 minutes until glossy and coated.", "Serve with cheese and herbs.", `Twirl up your ${name} and dig in!`],
+      tip: "Pasta water is liquid gold — it makes sauce silky and help it cling.",
+    },
+    desi_sweet: {
+      emoji: "🍬", time: "40 minutes", difficulty: "A Little Tricky",
+      ingredients: ["2 cups milk or 1 cup milk powder + 1 cup milk", "3/4 cup sugar (to taste)", "2 tablespoons ghee", "1/2 teaspoon cardamom powder", "A few saffron strands (optional)", `Star ingredient for ${name} (flour, semolina, lentils, or paneer)`, "Crushed pistachios & almonds to decorate"],
+      steps: ["Ask a grown-up to stay close — hot sugar and ghee need care.", "Prepare the base (soak, knead, or roast your star ingredient in ghee until fragrant).", "Slowly add warm milk, stirring constantly so no lumps form.", "Add sugar and cardamom; cook on low heat, stirring, until the mixture thickens and leaves the pan sides.", "Shape or set as your sweet requires (balls, squares, or pour into bowls).", "Decorate with nuts and saffron.", "Cool to room temperature or chill.", `Share your homemade ${name} with everyone!`],
+      tip: "Low heat and constant stirring is the whole secret of desi sweets.",
+    },
+    egg: {
+      emoji: "🍳", time: "15 minutes", difficulty: "Super Easy",
+      ingredients: ["3 eggs", "2 tablespoons milk", "Salt & pepper to taste", "1 tablespoon butter", `Favourite fillings for ${name} (cheese, veggies, herbs)`, "Toast to serve"],
+      steps: ["Crack the eggs into a bowl and fish out any shell bits.", "Whisk eggs, milk, salt, and pepper until frothy.", "Ask a grown-up to melt butter in a non-stick pan on low-medium heat.", "Pour in the eggs and let them set for 20 seconds.", "Gently push the edges to the centre, tilting the pan so runny egg flows out.", "Add fillings when the top is still slightly glossy.", "Fold or slide onto toast.", `Enjoy your fluffy ${name} right away!`],
+      tip: "Low heat = soft, creamy eggs. High heat makes them rubbery.",
+    },
+    snack: {
+      emoji: "😋", time: "20 minutes", difficulty: "Super Easy",
+      ingredients: [`Main ingredients for ${name}`, "1 tablespoon oil or butter", "Salt & favourite seasonings to taste", "A squeeze of lemon or a dipping sauce", "Fresh herbs (optional)", "Something crunchy on the side"],
+      steps: ["Wash your hands and lay out everything you need.", "Prepare the main ingredient (grown-ups help with knives and heat).", "Heat the oil or arrange your base on a plate or tray.", "Cook or assemble until golden/warm/set as your snack needs.", "Season while warm so flavours stick.", "Add lemon, herbs, or dip.", `Pile your ${name} onto a plate and share (or not)!`],
+      tip: "Snacks taste best eaten within 10 minutes — gather your tasters first!",
+    },
   };
+  const t = base[kind];
+  return { name, emoji: t.emoji, time: t.time, difficulty: t.difficulty, servings: "2–4 people", ingredients: t.ingredients, steps: t.steps, tip: t.tip, isGeneric: true };
 }
 
 function hashCode(s: string): number {
@@ -1251,57 +1308,82 @@ function hashCode(s: string): number {
   for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
   return h;
 }
+void hashCode;
+
+function normalizeWord(word: string): string {
+  let w = word.toLowerCase();
+  if (w.length > 4 && w.endsWith("ies")) w = w.slice(0, -3) + "y";
+  else if (w.length > 3 && w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
+  return w;
+}
+
+function wordsOf(text: string): string[] {
+  return normalize(text).split(" ").filter(Boolean).map(normalizeWord);
+}
+
+function longestContiguousRun(qWords: string[], kWords: string[]): number {
+  let best = 0;
+  for (let i = 0; i < qWords.length; i++) {
+    for (let j = 0; j < kWords.length; j++) {
+      let run = 0;
+      while (qWords[i + run] !== undefined && kWords[j + run] !== undefined && qWords[i + run] === kWords[j + run]) run++;
+      if (run > best) best = run;
+    }
+  }
+  return best;
+}
 
 export function findRecipe(query: string): Recipe {
-  const q = normalize(query);
-  if (!q) return generateGenericRecipe("something yummy");
+  const qWords = wordsOf(query);
+  if (qWords.length === 0) return generateGenericRecipe("something yummy");
+  const qJoined = qWords.join(" ");
 
-  // Longer / more specific keys first
-  const sorted = [...keywordMap].sort(
-    (a, b) => Math.max(...b.keys.map((k) => k.length)) - Math.max(...a.keys.map((k) => k.length))
-  );
-
-  for (const entry of sorted) {
+  // 1) Exact whole-query match → instant win (generic singles may win ONLY here)
+  for (const entry of keywordMap) {
     for (const key of entry.keys) {
-      if (q.includes(key) || key.includes(q)) {
+      if (wordsOf(key).join(" ") === qJoined && recipeBook[entry.id]) {
         return { ...recipeBook[entry.id] };
       }
     }
   }
 
-  // Fuzzy: check if any word matches
-  const words = q.split(" ");
-  for (const entry of sorted) {
+  // 2) Contiguous phrase coverage ≥60% of the key; score = key.length × coverage
+  let bestId: string | null = null;
+  let bestScore = -1;
+  for (const entry of keywordMap) {
     for (const key of entry.keys) {
-      for (const w of words) {
-        if (w.length > 3 && (key.includes(w) || w.includes(key))) {
-          return { ...recipeBook[entry.id] };
-        }
+      const kWords = wordsOf(key);
+      if (kWords.length === 0) continue;
+      if (kWords.length === 1 && GENERIC_SINGLE.has(kWords[0])) continue;
+      const run = longestContiguousRun(qWords, kWords);
+      const coverage = run / kWords.length;
+      if (run >= 1 && coverage >= 0.6) {
+        const score = key.length * coverage;
+        if (score > bestScore) { bestScore = score; bestId = entry.id; }
       }
     }
   }
+  if (bestId && recipeBook[bestId]) return { ...recipeBook[bestId] };
 
-  // Try world recipes next
-  for (const entry of worldRecipeKeywords) {
+  // 3) Whole-key subsequence fuzzy (skip generic singles)
+  let fuzzyId: string | null = null;
+  let fuzzyScore = -1;
+  for (const entry of keywordMap) {
     for (const key of entry.keys) {
-      if (q.includes(key) || key.includes(q)) {
-        return { ...worldRecipes[entry.id] };
+      const kWords = wordsOf(key);
+      if (kWords.length === 0) continue;
+      if (kWords.length === 1 && GENERIC_SINGLE.has(kWords[0])) continue;
+      let qi = 0;
+      for (const qw of qWords) {
+        if (qw === kWords[qi]) qi++;
+        if (qi === kWords.length) break;
       }
+      if (qi === kWords.length && key.length > fuzzyScore) { fuzzyScore = key.length; fuzzyId = entry.id; }
     }
   }
+  if (fuzzyId && recipeBook[fuzzyId]) return { ...recipeBook[fuzzyId] };
 
-  // Fuzzy match for world recipes
-  const queryWords = q.split(" ");
-  for (const entry of worldRecipeKeywords) {
-    for (const key of entry.keys) {
-      for (const w of queryWords) {
-        if (w.length > 3 && (key.includes(w) || w.includes(key))) {
-          return { ...worldRecipes[entry.id] };
-        }
-      }
-    }
-  }
-
+  // 4) Honest generic fallback — never fake an exact match
   return generateGenericRecipe(query);
 }
 
