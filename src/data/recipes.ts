@@ -12,6 +12,13 @@ export type Recipe = {
   youtubeVideo?: string;
   source?: string;
   sourceUrl?: string;
+  // Set when the user picks a famous chef in AI Top-Chef mode. The in-app
+  // recipe is only "inspired by" that chef — these URLs are searches for the
+  // dish on the chef's own official website / YouTube channel.
+  chefName?: string;
+  chefCountry?: string;
+  chefWebsiteSearchUrl?: string;
+  chefYouTubeSearchUrl?: string;
 };
 
 const recipeBook: Record<string, Recipe> = {
@@ -1215,7 +1222,7 @@ function detectGenericKind(lowerName: string): GenericKind {
   return "snack";
 }
 
-function generateGenericRecipe(foodName: string): Recipe {
+export function generateGenericRecipe(foodName: string): Recipe {
   const name = titleCase(normalize(foodName)) || "Something Yummy";
   const lowerName = name.toLowerCase();
   const kind = detectGenericKind(lowerName);

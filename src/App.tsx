@@ -80,6 +80,9 @@ export default function App() {
   const [player, setPlayer] = useState<PlayerState>(loadPlayer);
   const [foodQuery, setFoodQuery] = useState("");
   const [finderQuery, setFinderQuery] = useState("");
+  const [finderMode, setFinderMode] = useState<"search" | "aiChefs">("search");
+  const [finderRejectedRecipe, setFinderRejectedRecipe] = useState<string | undefined>(undefined);
+  const [finderRejectedMealId, setFinderRejectedMealId] = useState<string | undefined>(undefined);
   const [showSmartFinder, setShowSmartFinder] = useState(false);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -136,6 +139,20 @@ export default function App() {
   function openFinder(prefill: string) {
     playPop();
     setFinderQuery(prefill);
+    setFinderMode("search");
+    setFinderRejectedRecipe(undefined);
+    setFinderRejectedMealId(undefined);
+    setShowSmartFinder(true);
+  }
+
+  // Wrong recipe on the recipe page? Jump straight into AI Top-Chef mode,
+  // remembering the rejected recipe so it is never offered again.
+  function openAiChefFinder(dish: string, rejectedRecipeName: string, rejectedMealId?: string) {
+    playPop();
+    setFinderQuery(dish);
+    setFinderMode("aiChefs");
+    setFinderRejectedRecipe(rejectedRecipeName);
+    setFinderRejectedMealId(rejectedMealId);
     setShowSmartFinder(true);
   }
 
@@ -300,6 +317,7 @@ export default function App() {
             checkedIngredients={checkedIngredients}
             onToggleIngredient={toggleIngredient}
             onStartCooking={startCooking}
+            onNotThis={() => openAiChefFinder(recipe.name, recipe.name, (recipe as FoundRecipe).mealId)}
           />
         )}
 
@@ -349,6 +367,9 @@ export default function App() {
       {showSmartFinder && (
         <SmartRecipeFinder
           initialQuery={finderQuery}
+          initialMode={finderMode}
+          rejectedRecipeName={finderRejectedRecipe}
+          rejectedMealId={finderRejectedMealId}
           onClose={() => setShowSmartFinder(false)}
           onRecipeFound={handleRecipeFound}
         />
@@ -590,11 +611,13 @@ function RecipeScreen({
   checkedIngredients,
   onToggleIngredient,
   onStartCooking,
+  onNotThis,
 }: {
   recipe: Recipe;
   checkedIngredients: Record<number, boolean>;
   onToggleIngredient: (i: number) => void;
   onStartCooking: () => void;
+  onNotThis: () => void;
 }) {
   const q = encodeURIComponent(recipe.name);
   const checkedCount = recipe.ingredients.filter((_, i) => checkedIngredients[i]).length;
@@ -619,6 +642,23 @@ function RecipeScreen({
       </div>
 
       {recipe.youtubeVideo && <YouTubePlayer youtubeIdOrUrl={recipe.youtubeVideo} title={recipe.name} />}
+
+      {recipe.chefName && (
+        <section className="rounded-3xl bg-fuchsia-50 p-4 ring-1 ring-fuchsia-200" aria-label={`Recipe inspired by ${recipe.chefName}`}>
+          <h3 className="font-black text-fuchsia-800">⭐ {recipe.chefName} style {recipe.chefCountry ? `• ${recipe.chefCountry}` : ""}</h3>
+          <p className="mt-1 text-sm font-semibold text-fuchsia-700">
+            This in-app recipe is inspired by {recipe.chefName}&apos;s cooking. Want their exact original version? Search with a grown-up:
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {recipe.chefWebsiteSearchUrl && (
+              <a href={recipe.chefWebsiteSearchUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-full bg-white px-3 py-2 text-center text-sm font-extrabold text-sky-700 ring-1 ring-sky-200 transition active:scale-95">🌐 {recipe.chefName}&apos;s Website</a>
+            )}
+            {recipe.chefYouTubeSearchUrl && (
+              <a href={recipe.chefYouTubeSearchUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-full bg-white px-3 py-2 text-center text-sm font-extrabold text-red-600 ring-1 ring-red-200 transition active:scale-95">📺 {recipe.chefName} on YouTube</a>
+            )}
+          </div>
+        </section>
+      )}
 
       {recipe.isGeneric && (
         <section className="rounded-3xl bg-sky-50 p-4 ring-1 ring-sky-200" aria-label="About this universal recipe">
@@ -674,6 +714,17 @@ function RecipeScreen({
       >
         Start Cooking! 👨‍🍳
       </button>
+
+      <button
+        type="button"
+        onClick={onNotThis}
+        className="w-full rounded-3xl bg-white py-3 font-black text-red-500 ring-2 ring-red-200 transition hover:bg-red-50 active:scale-95"
+      >
+        ❌ Not This Recipe? Ask AI Top Chefs 🤖
+      </button>
+      <p className="-mt-2 text-center text-xs font-bold text-slate-400">
+        We&apos;ll search famous chefs from the right region &amp; country — like Food Fusion 🇵🇰 and Ranveer Brar 🇮🇳 — and show you lots of options to choose from!
+      </p>
     </main>
   );
 }

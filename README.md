@@ -10,6 +10,14 @@ world** — by dish name or by pasting a recipe-site URL.
   clarifier → curated Top-10 Chef Recipes + live [TheMealDB](https://www.themealdb.com) results →
   tap ONE result → confirmation screen. **Nothing loads until you tap “✓ Yes, That's Exactly It!”**
   Confirmed recipes persist to `localStorage["chefUniverseCustomRecipes"]`.
+- **🤖 AI Top-Chef mode (“❌ Not This”):** if the wrong recipe appears, tapping **Not This** (on the
+  confirmation screen *or* the recipe page) remembers that exact recipe, works out the dish's
+  region & country, and shows numbered famous-chef options to choose from — e.g. for biryani:
+  **1. Food Fusion 🇵🇰 · 2. Ranveer Brar 🇮🇳 · 3. Sanjeev Kapoor Khazana 🇮🇳** (26 chefs/YouTubers across
+  South Asia, East/SE Asia, Europe, the Middle East & Africa, the Americas, Australia and Baking —
+  see `src/data/famousChefs.ts`). Each chef can be cooked “in their style” inside the app (through
+  the same ✓ Yes confirmation), or searched on their official website/YouTube with a grown-up;
+  fresh online recipes for that region are listed too, minus anything already rejected.
 - **📹 In-app YouTube:** dish videos (always each recipe's own TheMealDB `strYoutube`) play
   *inside* the app via a `youtube-nocookie` click-to-play player — no redirects.
 - **🍳 Honest recipe library:** real built-in recipes (Tres Leches, Cakes by MK cakes, Beef
