@@ -63,7 +63,7 @@ export function createApp(db: Database, deps: AppDeps = {}): express.Express {
   app.use("/api", uploadRoutes(db));
 
   // Locally uploaded photos. Served under /api/uploads so single-function
-  // deployments (Vercel api/[...path]) can serve them too; the legacy
+  // deployments (Vercel api/index.js) can serve them too; the legacy
   // /uploads mount keeps previously saved photo links working locally.
   app.use(config.uploads.publicPath, express.static(config.uploads.dir, { maxAge: "7d" }));
   if ((config.uploads.publicPath as string) !== "/uploads") {
