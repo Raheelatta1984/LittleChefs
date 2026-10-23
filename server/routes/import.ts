@@ -5,10 +5,69 @@ import { requireChef } from "../lib/auth.js";
 import { ApiError } from "../lib/errors.js";
 import { rateLimit } from "../lib/rateLimit.js";
 import { confirmImportSchema, importSchema, parseBody } from "../lib/schemas.js";
-import { classifyInput, importRecipe } from "../services/importer/index.js";
-import { ensureCatalogueRecipe, insertChefRecipe } from "../services/recipes.js";
+import {
+  classifyInput, emptyDraft, importRecipe, tidyDraft, warningsFor, type ImportOutcome,
+} from "../services/importer/index.js";
+import { confidenceOf, titleFromUrl } from "../services/importer/parse.js";
+import { youtubeVideoId } from "../services/importer/youtube.js";
+import {
+  ensureCatalogueRecipe, findInternalMatches, insertChefRecipe, loadCatalogueRecipe,
+} from "../services/recipes.js";
 import { normaliseDishName } from "../services/normalise.js";
 import { config } from "../config.js";
+
+function coerceDraftHint(hint: Record<string, unknown>, inputValue: string): RecipeDraft {
+  const videoId =
+    (typeof hint.sourceVideoId === "string" && hint.sourceVideoId) || youtubeVideoId(inputValue);
+  return tidyDraft(
+    emptyDraft({
+      title: typeof hint.title === "string" ? hint.title : titleFromUrl(inputValue),
+      cuisine: typeof hint.cuisine === "string" ? hint.cuisine : null,
+      description: typeof hint.description === "string" ? hint.description : null,
+      difficulty: typeof hint.difficulty === "string" ? hint.difficulty : null,
+      baseServings: typeof hint.baseServings === "number" ? hint.baseServings : 4,
+      totalMinutes: typeof hint.totalMinutes === "number" ? hint.totalMinutes : null,
+      heroImageUrl:
+        (typeof hint.heroImageUrl === "string" && hint.heroImageUrl) ||
+        (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null),
+      sourceType:
+        hint.sourceType === "youtube" || hint.sourceType === "web" || hint.sourceType === "ai" ||
+        hint.sourceType === "manual" || hint.sourceType === "builtin"
+          ? hint.sourceType
+          : videoId
+            ? "youtube"
+            : "web",
+      sourceUrl:
+        (typeof hint.sourceUrl === "string" && hint.sourceUrl) ||
+        (inputValue.startsWith("http") ? inputValue : null),
+      sourceVideoId: videoId ?? null,
+      sourceChannel: typeof hint.sourceChannel === "string" ? hint.sourceChannel : null,
+      sourceAuthor: typeof hint.sourceAuthor === "string" ? hint.sourceAuthor : null,
+      ingredients: Array.isArray(hint.ingredients)
+        ? (hint.ingredients as RecipeDraft["ingredients"]).map((ing, i) => ({
+            position: i,
+            quantity: ing.quantity ?? null,
+            unit: ing.unit ?? null,
+            item: ing.item,
+            prepNote: ing.prepNote ?? null,
+            groupName: ing.groupName ?? null,
+            scalable: ing.scalable !== false && ing.quantity !== null && ing.quantity !== undefined,
+            rawText: ing.rawText ?? null,
+          }))
+        : [],
+      steps: Array.isArray(hint.steps)
+        ? (hint.steps as RecipeDraft["steps"]).map((step, i) => ({
+            position: i,
+            instruction: step.instruction,
+            durationSeconds: step.durationSeconds ?? null,
+            temperatureC: step.temperatureC ?? null,
+            imageUrl: step.imageUrl ?? null,
+            tip: step.tip ?? null,
+          }))
+        : [],
+    }),
+  );
+}
 
 type ImportRow = {
   id: string; status: string; input_type: string; input_value: string; method: string | null;
@@ -51,11 +110,91 @@ export function importRoutes(db: Database): Router {
         return created.rows[0].id;
       });
 
+      const hintDraft = body.draftHint ? coerceDraftHint(body.draftHint, body.inputValue) : null;
+
       try {
-        const outcome = await importRecipe(
-          { inputType, inputValue: body.inputValue },
-          { useLlm: Boolean(config.llm.apiKey) },
-        );
+        let outcome: ImportOutcome;
+        if (hintDraft && hintDraft.ingredients.length >= 2 && hintDraft.steps.length >= 1) {
+          const method: ImportOutcome["method"] =
+            hintDraft.sourceType === "youtube" ? "youtube" : "heuristic";
+          outcome = {
+            draft: hintDraft,
+            method,
+            confidence: confidenceOf(hintDraft),
+            warnings: warningsFor(hintDraft, method),
+          };
+        } else {
+          try {
+            outcome = await importRecipe(
+              { inputType, inputValue: body.inputValue },
+              { useLlm: Boolean(config.llm.apiKey), allowAiFallback: body.allowAiFallback },
+            );
+          } catch (primaryError) {
+            if (!body.allowAiFallback) throw primaryError;
+
+            const dishCandidate =
+              hintDraft?.title ||
+              (body.inputValue.startsWith("http")
+                ? titleFromUrl(body.inputValue)
+                : body.inputValue);
+            const matches = await findInternalMatches(db, chef.id, dishCandidate);
+            const shared = matches.sharedMatches[0];
+            const catalogueDraft = shared?.catalogueId
+              ? await loadCatalogueRecipe(db, shared.catalogueId)
+              : null;
+
+            const videoId = hintDraft?.sourceVideoId ?? youtubeVideoId(body.inputValue);
+            const fallbackDraft = tidyDraft(
+              emptyDraft({
+                title: hintDraft?.title || catalogueDraft?.title || dishCandidate || "Imported recipe",
+                cuisine: hintDraft?.cuisine ?? catalogueDraft?.cuisine ?? null,
+                description: hintDraft?.description ?? catalogueDraft?.description ?? null,
+                difficulty: hintDraft?.difficulty ?? catalogueDraft?.difficulty ?? "Easy",
+                baseServings: hintDraft?.baseServings || catalogueDraft?.baseServings || 4,
+                totalMinutes: hintDraft?.totalMinutes ?? catalogueDraft?.totalMinutes ?? 30,
+                heroImageUrl:
+                  hintDraft?.heroImageUrl ??
+                  (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null) ??
+                  catalogueDraft?.heroImageUrl ??
+                  null,
+                sourceType: videoId ? "youtube" : "web",
+                sourceUrl:
+                  hintDraft?.sourceUrl ??
+                  (body.inputValue.startsWith("http") ? body.inputValue : null),
+                sourceVideoId: videoId ?? null,
+                sourceChannel: hintDraft?.sourceChannel ?? null,
+                sourceAuthor: hintDraft?.sourceAuthor ?? hintDraft?.sourceChannel ?? null,
+                ingredients:
+                  catalogueDraft && catalogueDraft.ingredients.length > 0
+                    ? catalogueDraft.ingredients
+                    : [
+                        { position: 0, quantity: 2, unit: "cups", item: "main ingredient (review & edit)", prepNote: null, groupName: null, scalable: true, rawText: null },
+                        { position: 1, quantity: 1, unit: "tbsp", item: "cooking oil or butter", prepNote: null, groupName: null, scalable: true, rawText: null },
+                        { position: 2, quantity: null, unit: null, item: "salt & seasoning", prepNote: "to taste", groupName: null, scalable: false, rawText: "Salt to taste" },
+                      ],
+                steps:
+                  catalogueDraft && catalogueDraft.steps.length > 0
+                    ? catalogueDraft.steps
+                    : [
+                        { position: 0, instruction: "Prepare and measure all ingredients cleanly on your counter.", durationSeconds: 300, temperatureC: null, imageUrl: null, tip: null },
+                        { position: 1, instruction: "Follow the cooking method from the selected source and adjust steps below before saving.", durationSeconds: 900, temperatureC: null, imageUrl: null, tip: "Review with a grown-up!" },
+                      ],
+              }),
+            );
+
+            outcome = {
+              draft: fallbackDraft,
+              method: catalogueDraft ? "heuristic" : "manual",
+              confidence: catalogueDraft ? 0.72 : 0.45,
+              warnings: [
+                catalogueDraft
+                  ? "The selected page or video description did not list full written quantities, so AI Onboarding matched verified ingredients & steps for this dish — please review & adjust before saving!"
+                  : "The selected source could not be parsed automatically (no written recipe block found). We opened an editable starter draft so you can tweak ingredients & steps and continue AI Onboarding.",
+                ...warningsFor(fallbackDraft, "manual"),
+              ],
+            };
+          }
+        }
 
         const updated = await db.withChef(chef.id, async (tx) => {
           const result = await tx.query<ImportRow>(

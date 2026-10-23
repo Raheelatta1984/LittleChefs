@@ -8,6 +8,7 @@ export function MyRecipes({
   error,
   onOpen,
   onImport,
+  onBrowse,
   onDelete,
   onRefresh,
   onBack,
@@ -17,6 +18,7 @@ export function MyRecipes({
   error: string | null;
   onOpen: (recipe: RecipeView) => void;
   onImport: () => void;
+  onBrowse?: () => void;
   onDelete: (recipe: RecipeView) => void;
   onRefresh: () => void;
   onBack: () => void;
@@ -105,6 +107,15 @@ export function MyRecipes({
           >
             🤖 Import my first recipe
           </button>
+          {onBrowse && (
+            <button
+              type="button"
+              onClick={() => { playPop(); onBrowse(); }}
+              className="mt-2 w-full rounded-2xl bg-sky-50 py-2.5 text-sm font-black text-sky-700 ring-1 ring-sky-200 transition active:scale-95"
+            >
+              🌐📺 Browse Chef Websites &amp; YouTube In-App
+            </button>
+          )}
         </div>
       )}
 

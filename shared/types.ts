@@ -179,4 +179,46 @@ export type ImportJobView = {
   createdAt: string;
 };
 
+export type BrowserRecipeCard = {
+  url: string;
+  title: string;
+  snippet: string | null;
+  imageUrl: string | null;
+  siteName: string | null;
+  isLikelyRecipe: boolean;
+};
+
+export type BrowserYouTubeVideo = {
+  videoId: string;
+  watchUrl: string;
+  title: string;
+  channel: string | null;
+  duration: string | null;
+  publishedText: string | null;
+  viewCountText: string | null;
+  descriptionSnippet: string | null;
+  thumbnailUrl: string;
+};
+
+export type BrowserPageResponse = {
+  kind: "website" | "youtube-search" | "youtube-video";
+  url: string;
+  title: string;
+  siteName: string | null;
+  description: string | null;
+  heroImageUrl: string | null;
+  /** Sanitized HTML ready for sandboxed srcDoc preview with link-click interception. */
+  sanitizedHtml: string | null;
+  /** Recipe/article cards extracted from listing or search pages. */
+  links: BrowserRecipeCard[];
+  /** YouTube video cards extracted from search or channel pages. */
+  videos: BrowserYouTubeVideo[];
+  /** Full metadata when viewing an individual YouTube video. */
+  activeVideo: (BrowserYouTubeVideo & { description: string }) | null;
+  /** Non-null when the loaded page or video already holds a structured recipe. */
+  detectedRecipe: RecipeDraft | null;
+  detectedMethod: string | null;
+  detectedConfidence: number | null;
+};
+
 export type ApiErrorBody = { error: string; message: string; details?: unknown };

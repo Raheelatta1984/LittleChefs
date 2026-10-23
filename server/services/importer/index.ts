@@ -114,6 +114,7 @@ export function warningsFor(draft: RecipeDraft, method: ImportOutcome["method"])
 export type ImportOptions = {
   fetchImpl?: typeof fetch;
   useLlm?: boolean;
+  allowAiFallback?: boolean;
 };
 
 export async function importRecipe(
@@ -168,20 +169,51 @@ export async function importRecipe(
   }
 
   if (inputType === "youtube") {
-    const { draft: heuristic, description } = await importFromYouTube(value, { fetchImpl: options.fetchImpl });
+    const { draft: heuristic, description, captionText, meta } = await importFromYouTube(value, {
+      fetchImpl: options.fetchImpl,
+    });
     let draft = heuristic;
     let method: ImportOutcome["method"] = "youtube";
 
+    if (draft.ingredients.length === 0 && captionText) {
+      const fromCaptions = parseRecipeFromText(captionText, {
+        title: meta.title,
+        sourceUrl: draft.sourceUrl,
+        sourceVideoId: meta.videoId,
+        sourceChannel: meta.channel,
+      });
+      fromCaptions.sourceType = "youtube";
+      fromCaptions.heroImageUrl = meta.thumbnailUrl;
+      fromCaptions.sourceAuthor = meta.channel;
+      draft = mergeDrafts(fromCaptions, draft);
+    }
+
     if (options.useLlm !== false && llmConfigured() && confidenceOf(draft) < 0.8) {
+      const sourceText = [description, captionText, heuristic.description]
+        .filter(Boolean)
+        .join("\n\n");
       const llm = await structureWithLlm({
-        text: description || heuristic.description || "",
+        text:
+          sourceText ||
+          `Draft a structured recipe matching this cooking video: "${meta.title}" by ${meta.channel ?? "YouTube Chef"}.`,
         title: heuristic.title,
         sourceUrl: heuristic.sourceUrl,
         sourceType: "youtube",
+        allowGeneration: Boolean(options.allowAiFallback && draft.ingredients.length === 0),
         fetchImpl: options.fetchImpl,
       });
       if (llm) {
-        draft = mergeDrafts({ ...llm, heroImageUrl: heuristic.heroImageUrl }, heuristic);
+        draft = mergeDrafts(
+          {
+            ...llm,
+            heroImageUrl: heuristic.heroImageUrl,
+            sourceVideoId: meta.videoId,
+            sourceChannel: meta.channel,
+            sourceAuthor: meta.channel,
+            sourceType: "youtube",
+          },
+          heuristic,
+        );
         method = "llm";
       }
     }

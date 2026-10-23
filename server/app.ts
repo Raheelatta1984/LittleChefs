@@ -10,6 +10,7 @@ import { recipeRoutes } from "./routes/recipes.js";
 import { importRoutes } from "./routes/import.js";
 import { catalogueRoutes } from "./routes/catalogue.js";
 import { uploadRoutes } from "./routes/uploads.js";
+import { browserRoutes } from "./routes/browser.js";
 
 export function createApp(db: Database): express.Express {
   const app = express();
@@ -54,6 +55,7 @@ export function createApp(db: Database): express.Express {
   app.use("/api", catalogueRoutes(db));
   app.use("/api", recipeRoutes(db));
   app.use("/api", importRoutes(db));
+  app.use("/api", browserRoutes());
   app.use("/api", uploadRoutes(db));
 
   // Locally uploaded photos.

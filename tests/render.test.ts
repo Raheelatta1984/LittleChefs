@@ -12,6 +12,8 @@ import { DbRecipeDetail } from "../src/components/DbRecipeDetail.js";
 import { RecipeImporter } from "../src/components/RecipeImporter.js";
 import { InternalMatches } from "../src/components/InternalMatches.js";
 import { OnboardingFlow } from "../src/components/OnboardingFlow.js";
+import { WhatsNewTab } from "../src/components/WhatsNewTab.js";
+import { InAppBrowser } from "../src/components/InAppBrowser.js";
 
 const recipe: RecipeView = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -58,10 +60,35 @@ const noop = () => {};
 const characters = [{ id: "girl1", name: "Sunny", title: "Braided Chef", image: "/images/characters/girl1.jpg", emoji: "👧" }];
 
 describe("UI renders without crashing", () => {
-  it("renders the welcome screen", () => {
+  it("renders the welcome screen with What's New access for every user", () => {
     const html = renderToString(createElement(App));
     assert.match(html, /Chef Universe/);
     assert.match(html, /Pick your chef buddy/);
+    assert.match(html, /What&#x27;s New/);
+  });
+
+  it("renders the What's New tab with in-app browser & AI onboarding highlights", () => {
+    const html = renderToString(
+      createElement(WhatsNewTab, { chefName: "Sunny", onAction: noop }),
+    );
+    assert.match(html, /What&#x27;s New for Every Chef/);
+    assert.match(html, /In-App Chef Website Browser/);
+    assert.match(html, /In-App YouTube Channel/);
+    assert.match(html, /Open Website Browser/);
+  });
+
+  it("renders the in-app website & YouTube browser without external redirects", () => {
+    const html = renderToString(
+      createElement(InAppBrowser, {
+        initialQuery: "Chicken Biryani",
+        onClose: noop,
+        onImportWithAi: noop,
+      }),
+    );
+    assert.match(html, /Browse Recipes &amp; YouTube Without Leaving Chef Universe/);
+    assert.match(html, /Chef Website &amp; Web Search/);
+    assert.match(html, /YouTube Channel &amp; Videos/);
+    assert.doesNotMatch(html, /target="_blank"/);
   });
 
   it("renders the chef gate with roles and avatars", () => {

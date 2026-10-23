@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import type { Database, Queryable, QueryResult, Row } from "./index.js";
 
@@ -11,6 +12,9 @@ import type { Database, Queryable, QueryResult, Row } from "./index.js";
  */
 export async function createDatabase(): Promise<Database> {
   const { config } = await import("../config.js");
+  if (config.db.pgliteDir !== "memory") {
+    mkdirSync(config.db.pgliteDir, { recursive: true });
+  }
   const client =
     config.db.pgliteDir === "memory"
       ? await PGlite.create()
