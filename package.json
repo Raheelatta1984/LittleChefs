@@ -8,7 +8,7 @@
     "dev:api": "tsx watch server/index.ts",
     "server": "tsx server/index.ts",
     "start": "tsx server/index.ts",
-    "build": "vite build",
+    "build": "vite build && npm run build:api && node scripts/verify-api-build.mjs",
     "build:api": "tsc -p tsconfig.build.json && cp -r server/db/migrations dist-server/server/db/migrations",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
