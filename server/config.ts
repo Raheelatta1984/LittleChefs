@@ -45,6 +45,18 @@ export const config = {
     maxRedirects: num(process.env.IMPORT_MAX_REDIRECTS, 4),
     /** Only for local fixtures/tests — never enable in production. */
     allowPrivateHosts: bool(process.env.IMPORT_ALLOW_PRIVATE_HOSTS, false),
+    /**
+     * Recipe sites (Woolworths, Coles, Allrecipes…) routinely answer a
+     * non-browser agent with a stripped "enable JavaScript" shell that has no
+     * schema.org recipe, so the import falls back to reading page text and
+     * picks up clutter. A browser-style agent gets the same server-rendered
+     * page a chef would see. Set IMPORT_USER_AGENT to override (empty string
+     * = the old ChefUniverseBot identifier).
+     */
+    userAgent:
+      process.env.IMPORT_USER_AGENT !== undefined
+        ? process.env.IMPORT_USER_AGENT.trim()
+        : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
   },
   llm: {
     /** Any OpenAI-compatible endpoint: OpenAI, OpenRouter, Groq, Gemini compat, Ollama… */

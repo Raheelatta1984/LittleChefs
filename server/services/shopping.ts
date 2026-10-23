@@ -45,7 +45,8 @@ const AISLE_KEYWORDS: Array<[Aisle, string[]]> = [
     "spring onion", "scallion", "leek", "celery", "beans", "peas", "corn", "sweet potato",
     "coriander leaf", "mint leaf", "basil leaf", "curry leaf", "parsley leaf",
     "fresh herb", "curry leaf", "shallot", "pear", "peach", "orange", "grape", "melon",
-    "pineapple", "pomegranate", "dates", "raisin",
+    "pineapple", "pomegranate", "dates", "raisin", "leaves", "mixed leaves", "salad",
+    "rocket", "arugula", "kale", "silverbeet", "bok choy", "snow pea", "bean sprout",
   ]],
   ["meat", [
     "chicken", "beef", "lamb", "mutton", "pork", "turkey", "bacon", "sausage", "mince",

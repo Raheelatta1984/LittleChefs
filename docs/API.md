@@ -82,6 +82,15 @@ Import methods: `jsonld` (schema.org Recipe), `youtube` (video metadata + descri
 captions, Roman-Urdu repeats), `ocr` (photo scan), `catalogue` (internal reuse),
 `llm` (AI structuring, requires `LLM_API_KEY`), `manual` (starter draft).
 
+**Page-clutter filter** (`server/services/importer/clean.ts`) runs on every import — JSON-LD,
+page text, YouTube description, OCR and LLM output. It removes nutrition panels, ratings,
+review widgets (including their dates and internal tokens), print/save/shop buttons, sponsored
+and related-recipe blocks, and copyright footers; it also collapses the screen-reader duplicate
+that supermarket sites emit (`2 tsp olive oil 2teaspoons olive oil`). Ingredient/method sections
+end at the first *Nutrition / Description / Reviews / You might also like* heading, and servings
+and total time are read line-by-line (`Serve is for 6 people` → 6, `Prep 10m` + `Cook 30m` → 40).
+When lines were dropped the job's `warnings[]` says so.
+
 **Dish-name cascade** (`inputValue: "Chicken Balochi Karahi from Food Fusion"`):
 1. My book → shared catalogue — only a *strong* title match short-circuits; a weaker relative
    (seeded "Chicken Karahi") is kept as a clearly-labelled last resort, never substituted silently.

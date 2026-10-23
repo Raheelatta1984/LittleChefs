@@ -1,5 +1,6 @@
 import type { Ingredient, RecipeDraft, Step } from "../../../shared/types.js";
 import { parseQuantity } from "../scaling.js";
+import { collapseRepeatedText, isLikelyIngredientLine, isMonthWord, stripInlineNoise } from "./clean.js";
 
 export const UNIT_WORDS = [
   "cups", "cup", "tablespoons", "tablespoon", "tbsp", "tbs", "teaspoons", "teaspoon", "tsp",
@@ -123,11 +124,17 @@ const TRAILING_QTY_RE =
   /^(.*\S)\s+([0-9]+\s+[0-9]+\s*\/\s*[0-9]+|[0-9]+\s*\/\s*[0-9]+|[0-9]+(?:[.,][0-9]+)?(?:\s*[-–]\s*[0-9]+(?:[.,][0-9]+)?)?|[½¼¾⅓⅔⅛](?:\s*[-–]\s*(?:[0-9]+(?:[.,][0-9]+)?|[½¼¾⅓⅔⅛]))?)\s*([a-zA-Z]+)?\.?\s*(?:or\s+to\s+taste|to\s+taste)?\s*$/i;
 
 export function parseIngredientLine(line: string, position: number): Ingredient | null {
-  const raw = decodeEntities(line)
-    .replace(/^\s*(?:[-*•·–—]|\d+[.)])\s+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const raw = collapseRepeatedText(
+    decodeEntities(line)
+      .replace(/^\s*(?:[-*•·–—]|\d+[.)])\s+/, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
   if (raw.length < 2) return null;
+  // Page furniture (nutrition panels, review dates, "Copy text / Add to list"
+  // buttons, prose paragraphs) must never become an ingredient — this single
+  // guard covers every import path (JSON-LD, page text, YouTube, OCR, LLM).
+  if (!isLikelyIngredientLine(raw)) return null;
 
   let quantity: number | null = null;
   let unit: string | null = null;
@@ -139,9 +146,14 @@ export function parseIngredientLine(line: string, position: number): Ingredient 
     quantity = parseQuantity(match[1].replace(",", "."));
     rest = match[2] ?? "";
     const unitMatch = rest.match(/^([a-zA-Z]+)\.?\s+(.*)$/);
-    if (unitMatch && UNIT_LOOKUP.has(unitMatch[1].toLowerCase())) {
-      unit = UNIT_LOOKUP.get(unitMatch[1].toLowerCase()) ?? null;
-      rest = unitMatch[2];
+    if (unitMatch) {
+      const word = unitMatch[1].toLowerCase();
+      // Plural units that are missing from the lookup ("2 cloves garlic").
+      const resolved = UNIT_LOOKUP.get(word) ?? (word.endsWith("s") ? UNIT_LOOKUP.get(word.slice(0, -1)) : undefined);
+      if (resolved) {
+        unit = resolved;
+        rest = unitMatch[2];
+      }
     }
   } else {
     // No leading quantity — try the trailing-quantity layout. The trailing
@@ -152,7 +164,10 @@ export function parseIngredientLine(line: string, position: number): Ingredient 
       const trailingUnit = trailing[3]?.toLowerCase();
       if (!trailingUnit || UNIT_LOOKUP.has(trailingUnit)) {
         const parsed = parseQuantity(trailing[2].replace(",", "."));
-        if (parsed !== null && parsed > 0 && parsed < 100_000) {
+        // A bare 4-digit "quantity" at the end of a line is a year
+        // ("Published March 2021"), not an ingredient amount.
+        const looksLikeYear = !trailingUnit && parsed !== null && parsed >= 1900 && parsed <= 2100;
+        if (parsed !== null && parsed > 0 && parsed < 100_000 && !looksLikeYear) {
           quantity = parsed;
           unit = trailingUnit ? (UNIT_LOOKUP.get(trailingUnit) ?? null) : null;
           rest = trailing[1].trim();
@@ -163,8 +178,14 @@ export function parseIngredientLine(line: string, position: number): Ingredient 
 
   const segments = splitTopLevel(rest).map((segment) => segment.trim()).filter(Boolean);
   const [itemPart, ...noteParts] = segments.length > 0 ? segments : [""];
-  const rawItem = (itemPart ?? "").trim().replace(/:\s*$/, "");
+  // "2 cups (250g) plain flour" → item "plain flour"; the bracket is the same
+  // amount in another unit, not part of the shopping name.
+  const rawItem = (itemPart ?? "")
+    .trim()
+    .replace(/^\(\s*[^)]*\d[^)]*\)\s*/, "")
+    .replace(/:\s*$/, "");
   if (!rawItem) return null;
+  if (isMonthWord(rawItem)) return null;
 
   const { item, extraNote } = extractBracketedEnglish(rawItem);
   const notes = [extraNote, ...noteParts].filter(Boolean) as string[];
@@ -190,10 +211,13 @@ export function parseIngredientsFromLines(lines: string[]): Ingredient[] {
 }
 
 export function cleanStep(line: string): string {
-  return decodeEntities(line)
-    .replace(/^\s*(?:[-*•·–—]|\d+[.)]|step\s*\d+[:.)]?)\s+/i, "")
+  return stripInlineNoise(decodeEntities(line)
+    .replace(
+      /^\s*(?:[-*•·–—]|\d+[.)]|step\s*\d+\s*(?:of|\/)\s*\d+|step\s*\d+[:.)]?|\d+\s*(?:of|\/)\s*\d+)\s+/i,
+      "",
+    )
     .replace(/\s+/g, " ")
-    .trim();
+    .trim());
 }
 
 export function parseDuration(text: string | null | undefined): number | null {

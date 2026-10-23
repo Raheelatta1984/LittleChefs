@@ -57,11 +57,28 @@ So the same dish is never imported twice, yet no chef can see another chef's boo
 - Accepts a recipe URL, a YouTube video link, a pasted video description, or just a dish name.
 - Extraction order: `schema.org` JSON-LD → YouTube metadata + description → heuristic HTML/text
   parsing → optional LLM structuring (any OpenAI-compatible endpoint).
+- **Page-clutter cleaner (V3.4)** — only real food reaches your list. A dedicated filter
+  (`server/services/importer/clean.ts`) drops nutrition panels (`30.8g`, `1970kJ / 468Cal`,
+  `23% of daily energy intake`), star ratings, review widgets and their dates
+  (`March 2021`, `12 March 2024`, `2026-10-23T11:03-04:00`), "Print / Save Recipe / Copy text /
+  Add to list / Shop recipe" buttons, sponsored blocks, related-recipe carousels and copyright
+  footers. It also collapses the screen-reader duplicate most supermarket sites emit
+  (`2 tsp extra virgin olive oil 2teaspoons extra virgin olive oil` → one ingredient). Sections
+  end at the first "Nutrition / Description / Reviews / You might also like" heading, so the
+  method never swallows a review widget — and the review screen tells you how many lines were
+  left out.
+- **Correct servings and timing** — `Serve is for 6 people` sets 6 servings (instead of grabbing
+  the first number it finds), and `Prep 10m` + `Cook 30m` becomes a 40-minute total.
+- **Clean titles** — `Healthier Spaghetti Bolognese Recipe | Woolworths` imports as
+  `Healthier Spaghetti Bolognese Recipe`; the shop name never becomes part of the recipe name.
 - Produces a full mapping: metadata · **ordered steps** with duration/temperature/photo ·
   **ingredients** with quantity/unit/prep note/group · **hero + per-step images** · **provenance**.
 - **You review and edit everything** before it is saved to your private book.
 - Import failures (paywalls, unreadable pages, no recipe in the description) return honest,
   human-readable messages — never a fabricated recipe.
+- Sites that serve a cut-down page to bots are fetched with a browser-style agent
+  (`IMPORT_USER_AGENT`, see `.env.example`), so the importer sees the same server-rendered
+  recipe a chef sees.
 
 ### 🍽️ Onboarding interview → portions → shopping list
 - **How many people are eating?** — every quantity is rescaled with kitchen-friendly rounding
@@ -108,7 +125,7 @@ The first API start creates the database, runs migrations and seeds the built-in
 | `npm run db:seed` | Load built-in recipes into the shared catalogue |
 | `npm run db:reset` | Delete the local PGlite data and rebuild |
 | `npm run build:api` | Compile the API to `dist-server/` (used by the Vercel function) |
-| `npm test` | 104 tests: RLS isolation, scaling, aisles, importers, dish cascade, OCR, SSRF, full API, Vercel routing |
+| `npm test` | 115 tests: RLS isolation, scaling, aisles, importers (incl. a recorded Woolworths recipe page), page-clutter filtering, dish cascade, OCR, SSRF, full API, Vercel routing |
 | `npm run typecheck` | Type-check app + server |
 
 ### ▲ Deploying to Vercel (static app + serverless API)

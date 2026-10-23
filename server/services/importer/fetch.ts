@@ -78,6 +78,9 @@ export async function safeFetchPage(
   const doFetch = options.fetchImpl ?? fetch;
   let url = normaliseUrl(rawUrl);
   const maxBytes = config.imports.maxBytes;
+  const userAgent =
+    options.userAgent ??
+    (config.imports.userAgent || "Mozilla/5.0 (compatible; ChefUniverseBot/1.0; +recipe import)");
 
   for (let hop = 0; hop <= config.imports.maxRedirects; hop++) {
     await assertPublicHost(url.hostname);
@@ -88,9 +91,7 @@ export async function safeFetchPage(
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "user-agent":
-            options.userAgent ??
-            "Mozilla/5.0 (compatible; ChefUniverseBot/1.0; +recipe import)",
+          "user-agent": userAgent,
           accept: options.accept ?? "text/html,application/xhtml+xml,application/ld+json;q=0.9,*/*;q=0.5",
           "accept-language": "en-US,en;q=0.9",
         },
