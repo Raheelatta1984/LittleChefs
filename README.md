@@ -100,7 +100,7 @@ The first API start creates the database, runs migrations and seeds the built-in
 |---|---|
 | `npm run dev` | Starts the API and Vite web app together; Vite proxies `/api` and `/uploads` to the API |
 | `npm run dev:api` | API server with watch mode on port 8787 |
-| `npm run build` | Production build → one self-contained `dist/index.html` |
+| `npm run build` | Production build → one self-contained `dist/index.html` **plus** the compiled API (`dist-server/`), verified by `scripts/verify-api-build.mjs` so a static-only deploy can never ship silently |
 | `npm run server` / `npm start` | API server (also serves `dist/` when built) |
 | `npm run db:migrate` | Apply SQL migrations |
 | `npm run db:seed` | Load built-in recipes into the shared catalogue |
