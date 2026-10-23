@@ -22,7 +22,7 @@ export type WhatsNewItem = {
   action: WhatsNewAction;
 };
 
-export const LATEST_WHATS_NEW_VERSION = "3.2";
+export const LATEST_WHATS_NEW_VERSION = "3.3";
 export const WHATS_NEW_STORAGE_KEY = "chefUniverseWhatsNewSeen";
 
 export function hasUnseenWhatsNew(): boolean {
@@ -49,6 +49,42 @@ export const WHATS_NEW_CATEGORIES: Array<{ id: WhatsNewCategory; label: string; 
 ];
 
 export const WHATS_NEW_ITEMS: WhatsNewItem[] = [
+  {
+    id: "dish-name-onboarding-cascade",
+    version: "v3.3",
+    date: "Oct 2026",
+    badge: "UPDATED",
+    category: "onboarding",
+    emoji: "🍛",
+    title: "Just Type the Dish — We Hunt It Down For You!",
+    summary:
+      "Type something like “Chicken Balochi Karahi from Food Fusion” and AI Onboarding now checks your book, the Food Fusion website, then YouTube video descriptions — automatically. Plus the “Something went wrong (404)” bug is fixed for good.",
+    highlights: [
+      "No link needed: a dish name searches your book → the shared catalogue → the chef's own website → YouTube, where the recipe hides in the video description.",
+      "Food Fusion style pages (quantities at the end, Urdu + English names) now import with correct amounts, groups and steps.",
+      "If a website can't be read we jump straight to YouTube for the same dish instead of showing a dead-end error.",
+    ],
+    ctaLabel: "🤖 Try Dish-Name Onboarding",
+    action: "open-importer",
+  },
+  {
+    id: "ocr-photo-scan-onboarding",
+    version: "v3.3",
+    date: "Oct 2026",
+    badge: "NEW",
+    category: "onboarding",
+    emoji: "📷",
+    title: "Scan a Recipe Photo — OCR Does the Reading!",
+    summary:
+      "Found a recipe in a cookbook, a screenshot or a hand-written card? Snap a photo and OCR reads it, then AI Onboarding maps the ingredients, steps, portions and shopping list.",
+    highlights: [
+      "New “📷 Scan a photo (OCR)” tab inside AI Recipe Onboarding — works with camera photos and screenshots.",
+      "You can see and fix the exact words the scan read, then re-read them with one tap before saving.",
+      "Perfect rescue when a website blocks imports or a video has no written recipe.",
+    ],
+    ctaLabel: "📷 Scan a Recipe Photo",
+    action: "open-importer",
+  },
   {
     id: "in-app-website-browser",
     version: "v3.2",

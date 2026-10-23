@@ -1,5 +1,5 @@
 import type {
-  BrowserPageResponse, ChefProfile, ImportJobView, OnboardingAnswers, OnboardingResult,
+  BrowserPageResponse, ChefProfile, ImportJobView, OcrImportResponse, OnboardingAnswers, OnboardingResult,
   RecipeDraft, RecipeView, Role, SearchResponse, ShoppingListView,
 } from "../../shared/types";
 
@@ -74,11 +74,16 @@ async function request<T>(
 
   if (!response.ok) {
     const body = payload as { message?: string; details?: unknown } | null;
-    throw new ApiClientError(
-      response.status,
-      body?.message ?? `Something went wrong (${response.status}).`,
-      body?.details,
-    );
+    // A non-JSON error means the request never reached our API (e.g. a static
+    // deployment with no /api functions) — say so plainly instead of the old
+    // mysterious "Something went wrong (404).".
+    const fallback =
+      response.status === 404
+        ? "We couldn't reach the recipe kitchen server (404). The app's server may not be running or deployed yet — ask a grown-up to start it (`npm run dev:api`), then try again."
+        : response.status >= 500
+          ? "The recipe kitchen server hiccupped. Wait a few seconds and try again."
+          : `Something went wrong (${response.status}). Please try again.`;
+    throw new ApiClientError(response.status, body?.message ?? fallback, body?.details);
   }
   return payload as T;
 }
@@ -137,6 +142,14 @@ export const api = {
         ...(options?.draftHint ? { draftHint: options.draftHint } : {}),
       },
     }).then((r) => r.job),
+
+  /** 📷 Scan a recipe photo/screenshot with OCR → same AI-onboarding review flow. */
+  ocrImport: (token: string, dataUrl: string, title?: string) =>
+    request<OcrImportResponse>("/imports/ocr", {
+      method: "POST",
+      token,
+      body: { dataUrl, ...(title?.trim() ? { title: title.trim() } : {}) },
+    }),
 
   browseNavigate: (url: string) =>
     request<{ page: BrowserPageResponse }>(`/browser/navigate?url=${encodeURIComponent(url)}`).then(

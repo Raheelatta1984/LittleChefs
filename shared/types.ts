@@ -222,3 +222,12 @@ export type BrowserPageResponse = {
 };
 
 export type ApiErrorBody = { error: string; message: string; details?: unknown };
+
+/** POST /imports/ocr — a scanned photo turned into a reviewable import job. */
+export type OcrImportResponse = {
+  job: ImportJobView;
+  /** Raw recognised text, so the chef can fix the scan and re-read it. */
+  ocrText: string;
+  /** Tesseract word confidence 0–100 when available. */
+  ocrConfidence: number | null;
+};

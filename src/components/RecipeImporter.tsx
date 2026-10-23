@@ -5,6 +5,37 @@ import { YouTubePlayer } from "./YouTubePlayer";
 import { playPop, playSuccess } from "../utils/audio";
 
 type Phase = "input" | "loading" | "review" | "saving";
+type InputMode = "link" | "scan";
+
+/** Shrinks a phone photo to a scan-friendly size (faster OCR, under the upload cap). */
+async function downscaleImage(file: File): Promise<string> {
+  const original = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("decode failed"));
+      image.src = original;
+    });
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    if (scale >= 1 && original.length < 3_500_000) return original;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return original;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return original;
+  }
+}
 
 function draftFromJob(job: ImportJobView): RecipeDraft {
   const draft = job.draft;
@@ -54,21 +85,27 @@ export function RecipeImporter({
   onClose: () => void;
   onSaved: (recipe: RecipeView) => void;
   onSavedAndOnboard?: (recipe: RecipeView) => void;
-  onOpenBrowser?: (query: string) => void;
+  onOpenBrowser?: (query: string, tab?: "website" | "youtube") => void;
 }) {
   const [phase, setPhase] = useState<Phase>(autoStart && initialQuery.trim() ? "loading" : "input");
+  const [mode, setMode] = useState<InputMode>("link");
+  const [loadingLabel, setLoadingLabel] = useState("Reading the recipe…");
   const [input, setInput] = useState(initialQuery);
   const [job, setJob] = useState<ImportJobView | null>(null);
   const [draft, setDraft] = useState<RecipeDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scanDataUrl, setScanDataUrl] = useState<string | null>(null);
+  const [ocrText, setOcrText] = useState<string | null>(null);
   const autoRanRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function runImport(overrideValue?: string) {
     const value = (overrideValue ?? input).trim();
     if (!value) {
-      setError("Paste a recipe link, a YouTube link, or the recipe description.");
+      setError("Type a dish name, paste a recipe link, a YouTube link, or the recipe description.");
       return;
     }
+    setLoadingLabel("Reading the recipe…");
     setPhase("loading");
     setError(null);
     try {
@@ -77,6 +114,7 @@ export function RecipeImporter({
         draftHint: value === initialQuery.trim() ? draftHint : null,
       });
       setJob(result);
+      setOcrText(null);
       setDraft(draftFromJob(result));
       setPhase("review");
     } catch (caught) {
@@ -91,6 +129,37 @@ export function RecipeImporter({
     void runImport(initialQuery.trim());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function pickScanPhoto(file: File | null) {
+    if (!file) return;
+    setError(null);
+    try {
+      setScanDataUrl(await downscaleImage(file));
+    } catch {
+      setError("That photo couldn't be opened. Try a different picture.");
+    }
+  }
+
+  /** 📷 OCR path: photo/screenshot → recognised text → same AI-onboarding review. */
+  async function runOcrImport() {
+    if (!scanDataUrl) {
+      setError("Take or choose a photo of the recipe first.");
+      return;
+    }
+    setLoadingLabel("Scanning your photo…");
+    setPhase("loading");
+    setError(null);
+    try {
+      const result = await api.ocrImport(token, scanDataUrl);
+      setJob(result.job);
+      setOcrText(result.ocrText);
+      setDraft(draftFromJob(result.job));
+      setPhase("review");
+    } catch (caught) {
+      setError(caught instanceof ApiClientError ? caught.message : "Scanning failed.");
+      setPhase("input");
+    }
+  }
 
   async function save(startOnboarding = false) {
     if (!job || !draft) return;
@@ -155,33 +224,140 @@ export function RecipeImporter({
 
         {phase === "input" && (
           <>
-            <label htmlFor="import-input" className="mt-4 block text-sm font-black text-slate-600">
-              Recipe link or description
-            </label>
-            <textarea
-              id="import-input"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              rows={5}
-              placeholder={"https://www.example.com/chicken-biryani\n\nor\n\nhttps://www.youtube.com/watch?v=…\n\nor paste:\nIngredients:\n- 2 cups rice\nMethod:\n1. Boil the rice…"}
-              className="mt-1 w-full rounded-2xl border-2 border-slate-200 p-3 font-semibold outline-none focus:border-orange-400"
-            />
-            <p className="mt-2 rounded-2xl bg-sky-50 p-3 text-[11px] font-bold text-sky-800 ring-1 ring-sky-100">
-              🔎 We check your own book and the shared catalogue first — a dish we already know is copied
-              instantly, with no internet needed.
-            </p>
-            {error && (
-              <p className="mt-2 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700 ring-1 ring-red-200" role="alert">
-                {error}
-              </p>
+            <div className="mt-4 grid grid-cols-2 gap-2" role="tablist" aria-label="How to add the recipe">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "link"}
+                onClick={() => { playPop(); setMode("link"); setError(null); }}
+                className={`rounded-2xl py-2.5 text-xs font-black transition active:scale-95 ${
+                  mode === "link"
+                    ? "bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                🔗 Dish, link or text
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "scan"}
+                onClick={() => { playPop(); setMode("scan"); setError(null); }}
+                className={`rounded-2xl py-2.5 text-xs font-black transition active:scale-95 ${
+                  mode === "scan"
+                    ? "bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white shadow"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                📷 Scan a photo (OCR)
+              </button>
+            </div>
+
+            {mode === "link" && (
+              <>
+                <label htmlFor="import-input" className="mt-4 block text-sm font-black text-slate-600">
+                  Dish name, recipe link or description
+                </label>
+                <textarea
+                  id="import-input"
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  rows={5}
+                  placeholder={"Chicken Balochi Karahi from Food Fusion\n\nor a link:\nhttps://www.foodfusion.com/recipe/…\nhttps://www.youtube.com/watch?v=…\n\nor paste:\nIngredients:\n- 2 cups rice\nMethod:\n1. Boil the rice…"}
+                  className="mt-1 w-full rounded-2xl border-2 border-slate-200 p-3 font-semibold outline-none focus:border-orange-400"
+                />
+                <p className="mt-2 rounded-2xl bg-sky-50 p-3 text-[11px] font-bold text-sky-800 ring-1 ring-sky-100">
+                  🔎 Just a dish name works too! We check your book &amp; the shared catalogue first, then the
+                  chef&apos;s website (e.g. Food Fusion), then YouTube — the recipe is usually hiding in the
+                  video description. 📺
+                </p>
+              </>
             )}
-            <button
-              type="button"
-              onClick={() => void runImport()}
-              className="mt-4 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 to-pink-500 py-3.5 font-black text-white shadow-lg transition active:scale-95"
-            >
-              🔮 Import &amp; map this recipe
-            </button>
+
+            {mode === "scan" && (
+              <div className="mt-4">
+                <p className="text-sm font-black text-slate-600">Photo or screenshot of the recipe</p>
+                <p className="mt-1 text-[11px] font-bold text-slate-500">
+                  A cookbook page, a screenshot from a video, a handwritten card — keep it flat, bright and
+                  straight-on. We&apos;ll read the words (OCR), then AI Onboarding maps the ingredients &amp; steps.
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  aria-label="Choose a recipe photo to scan"
+                  onChange={(event) => void pickScanPhoto(event.target.files?.[0] ?? null)}
+                />
+                {scanDataUrl ? (
+                  <div className="mt-3 overflow-hidden rounded-2xl ring-2 ring-orange-200">
+                    <img src={scanDataUrl} alt="Recipe photo ready to scan" className="max-h-64 w-full object-contain bg-slate-50" />
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => { playPop(); fileInputRef.current?.click(); }}
+                  className="mt-3 w-full rounded-3xl bg-sky-50 py-3 text-sm font-black text-sky-700 ring-1 ring-sky-200 transition hover:bg-sky-100 active:scale-95"
+                >
+                  {scanDataUrl ? "📷 Choose a different photo" : "📷 Take / choose a photo"}
+                </button>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-2 rounded-2xl bg-red-50 p-3 ring-1 ring-red-200" role="alert">
+                <p className="text-sm font-bold text-red-700">{error}</p>
+                <p className="mt-2 text-[11px] font-black uppercase tracking-wide text-red-400">Try another way:</p>
+                <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+                  {onOpenBrowser && (
+                    <button
+                      type="button"
+                      onClick={() => { playPop(); onOpenBrowser(input.trim(), "youtube"); }}
+                      className="rounded-xl bg-white py-2 text-[11px] font-black text-red-600 ring-1 ring-red-200 transition active:scale-95"
+                    >
+                      ▶️ YouTube
+                    </button>
+                  )}
+                  {onOpenBrowser && (
+                    <button
+                      type="button"
+                      onClick={() => { playPop(); onOpenBrowser(input.trim(), "website"); }}
+                      className="rounded-xl bg-white py-2 text-[11px] font-black text-sky-700 ring-1 ring-sky-200 transition active:scale-95"
+                    >
+                      🌐 Websites
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { playPop(); setMode(mode === "scan" ? "link" : "scan"); setError(null); }}
+                    className="rounded-xl bg-white py-2 text-[11px] font-black text-fuchsia-700 ring-1 ring-fuchsia-200 transition active:scale-95"
+                  >
+                    {mode === "scan" ? "🔗 Type / paste" : "📷 Scan photo"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {mode === "link" ? (
+              <button
+                type="button"
+                onClick={() => void runImport()}
+                className="mt-4 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 to-pink-500 py-3.5 font-black text-white shadow-lg transition active:scale-95"
+              >
+                🔮 Import &amp; map this recipe
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void runOcrImport()}
+                disabled={!scanDataUrl}
+                className="mt-4 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 to-pink-500 py-3.5 font-black text-white shadow-lg transition active:scale-95 disabled:opacity-50"
+              >
+                🔎 Scan &amp; read this recipe
+              </button>
+            )}
+
             {onOpenBrowser && (
               <button
                 type="button"
@@ -203,9 +379,11 @@ export function RecipeImporter({
         {phase === "loading" && (
           <div className="py-12 text-center">
             <p className="text-5xl" style={{ animation: "pop 1s ease-in-out infinite" }} aria-hidden="true">🍳</p>
-            <p className="mt-4 font-black text-slate-700">Reading the recipe…</p>
+            <p className="mt-4 font-black text-slate-700">{loadingLabel}</p>
             <p className="mt-1 text-sm font-semibold text-slate-500">
-              Finding the ingredients, mapping each step and collecting the photos.
+              {loadingLabel.startsWith("Scanning")
+                ? "Reading the words in your photo, then mapping the ingredients and steps."
+                : "Checking your book & the shared catalogue, then the chef's website, then YouTube descriptions — mapping each step and collecting the photos."}
             </p>
           </div>
         )}
@@ -217,6 +395,28 @@ export function RecipeImporter({
                 ⚠️ {warning}
               </p>
             ))}
+
+            {ocrText && (
+              <details className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
+                <summary className="cursor-pointer text-xs font-black text-slate-600">
+                  📷 Words we read from your photo — fix any mistakes &amp; re-read
+                </summary>
+                <textarea
+                  value={ocrText}
+                  onChange={(event) => setOcrText(event.target.value)}
+                  rows={8}
+                  aria-label="Scanned recipe text"
+                  className="mt-2 w-full rounded-xl border-2 border-slate-200 p-2 text-xs font-semibold outline-none focus:border-orange-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setInput(ocrText); void runImport(ocrText); }}
+                  className="mt-2 w-full rounded-xl bg-white py-2 text-xs font-black text-fuchsia-700 ring-1 ring-fuchsia-200 transition active:scale-95"
+                >
+                  🔁 Re-read the fixed text with AI Onboarding
+                </button>
+              </details>
+            )}
 
             <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-2 ring-1 ring-slate-100">
               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">

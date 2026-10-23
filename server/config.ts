@@ -13,6 +13,13 @@ function bool(value: string | undefined, fallback = false): boolean {
 const databaseUrl = process.env.DATABASE_URL?.trim() || "";
 const driver = (process.env.DB_DRIVER?.trim() || (databaseUrl ? "postgres" : "pglite")).toLowerCase();
 
+/**
+ * Serverless hosts (Vercel) have a read-only filesystem except /tmp, which is
+ * also wiped between instances. PGlite + uploads therefore live in /tmp there
+ * (great for demos; set DATABASE_URL for durable production data).
+ */
+const onServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
 export const config = {
   env: process.env.NODE_ENV ?? "development",
   port: num(process.env.PORT, 8787),
@@ -24,7 +31,9 @@ export const config = {
   db: {
     driver: driver === "postgres" ? ("postgres" as const) : ("pglite" as const),
     url: databaseUrl,
-    pgliteDir: process.env.PGLITE_DIR?.trim() || resolve(process.cwd(), "server/.data/pglite"),
+    pgliteDir:
+      process.env.PGLITE_DIR?.trim() ||
+      (onServerless ? "/tmp/chef-universe-pglite" : resolve(process.cwd(), "server/.data/pglite")),
     ssl: bool(process.env.DATABASE_SSL, false),
   },
   auth: {
@@ -45,9 +54,13 @@ export const config = {
     timeoutMs: num(process.env.LLM_TIMEOUT_MS, 25_000),
   },
   uploads: {
-    dir: process.env.UPLOADS_DIR?.trim() || resolve(process.cwd(), "server/.data/uploads"),
+    dir:
+      process.env.UPLOADS_DIR?.trim() ||
+      (onServerless ? "/tmp/chef-universe-uploads" : resolve(process.cwd(), "server/.data/uploads")),
     maxBytes: num(process.env.UPLOAD_MAX_BYTES, 4_000_000),
-    publicPath: "/uploads",
+    // Under /api so single-function deployments (Vercel) can serve photos.
+    // The app also mounts the legacy /uploads path for older saved links.
+    publicPath: "/api/uploads",
   },
   cors: {
     origins: (process.env.CORS_ORIGINS ?? "")

@@ -3,7 +3,7 @@ import { ApiError } from "../lib/errors.js";
 import { rateLimit } from "../lib/rateLimit.js";
 import { browseWebsite, browseYouTube } from "../services/browser.js";
 
-export function browserRoutes(): Router {
+export function browserRoutes(deps: { fetchImpl?: typeof fetch } = {}): Router {
   const router = Router();
   const limit = rateLimit({ windowMs: 5 * 60_000, max: 60, name: "browser" });
 
@@ -12,7 +12,7 @@ export function browserRoutes(): Router {
       const url = typeof req.query.url === "string" ? req.query.url.trim() : "";
       if (!url) throw ApiError.badRequest("Provide a website link or search query.");
       if (url.length > 2048) throw ApiError.badRequest("That link is too long.");
-      const page = await browseWebsite(url);
+      const page = await browseWebsite(url, { fetchImpl: deps.fetchImpl });
       res.json({ page });
     } catch (error) {
       next(error);
@@ -27,7 +27,7 @@ export function browserRoutes(): Router {
         "";
       if (!query) throw ApiError.badRequest("Provide a YouTube search query, channel or video link.");
       if (query.length > 2048) throw ApiError.badRequest("That query is too long.");
-      const page = await browseYouTube(query);
+      const page = await browseYouTube(query, { fetchImpl: deps.fetchImpl });
       res.json({ page });
     } catch (error) {
       next(error);

@@ -4,11 +4,15 @@ import type { ImportJobView, RecipeDraft } from "../../shared/types.js";
 import { requireChef } from "../lib/auth.js";
 import { ApiError } from "../lib/errors.js";
 import { rateLimit } from "../lib/rateLimit.js";
-import { confirmImportSchema, importSchema, parseBody } from "../lib/schemas.js";
+import { confirmImportSchema, importSchema, ocrImportSchema, parseBody } from "../lib/schemas.js";
 import {
-  classifyInput, emptyDraft, importRecipe, tidyDraft, warningsFor, type ImportOutcome,
+  classifyInput, emptyDraft, importRecipe, mergeDrafts, tidyDraft, warningsFor, type ImportOutcome,
 } from "../services/importer/index.js";
 import { confidenceOf, titleFromUrl } from "../services/importer/parse.js";
+import { parseRecipeFromText } from "../services/importer/text.js";
+import { llmConfigured, structureWithLlm } from "../services/importer/llm.js";
+import { decodeImageDataUrl, recogniseImageText, type OcrRecognise } from "../services/importer/ocr.js";
+import { importDishByCascade } from "../services/cascade.js";
 import { youtubeVideoId } from "../services/importer/youtube.js";
 import {
   ensureCatalogueRecipe, findInternalMatches, insertChefRecipe, loadCatalogueRecipe,
@@ -91,9 +95,15 @@ function toJobView(row: ImportRow): ImportJobView {
   };
 }
 
-export function importRoutes(db: Database): Router {
+export type ImportRouteDeps = {
+  fetchImpl?: typeof fetch;
+  ocrRecognise?: OcrRecognise;
+};
+
+export function importRoutes(db: Database, deps: ImportRouteDeps = {}): Router {
   const router = Router();
   const limit = rateLimit({ windowMs: 5 * 60_000, max: 20, name: "import" });
+  const recognise = deps.ocrRecognise ?? recogniseImageText;
 
   router.post("/imports", limit, async (req, res, next) => {
     try {
@@ -125,10 +135,23 @@ export function importRoutes(db: Database): Router {
           };
         } else {
           try {
-            outcome = await importRecipe(
-              { inputType, inputValue: body.inputValue },
-              { useLlm: Boolean(config.llm.apiKey), allowAiFallback: body.allowAiFallback },
-            );
+            // A bare dish name runs the full onboarding cascade: internal
+            // catalogue → chef website (e.g. Food Fusion) → YouTube
+            // description → AI. Links/text use the direct importer.
+            outcome =
+              inputType === "dish"
+                ? await importDishByCascade(db, chef.id, body.inputValue, {
+                    fetchImpl: deps.fetchImpl,
+                    useLlm: Boolean(config.llm.apiKey),
+                  })
+                : await importRecipe(
+                    { inputType, inputValue: body.inputValue },
+                    {
+                      fetchImpl: deps.fetchImpl,
+                      useLlm: Boolean(config.llm.apiKey),
+                      allowAiFallback: body.allowAiFallback,
+                    },
+                  );
           } catch (primaryError) {
             if (!body.allowAiFallback) throw primaryError;
 
@@ -219,6 +242,95 @@ export function importRoutes(db: Database): Router {
         throw ApiError.upstream(message);
       }
     } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * 📷 OCR onboarding: scan a photo / screenshot of a recipe, then run the
+   * recognised text through the same AI-onboarding parser as websites and
+   * YouTube descriptions. Always lands in the review step — even a rough
+   * scan returns an editable draft plus the raw scan text to fix & re-read.
+   */
+  router.post("/imports/ocr", limit, async (req, res, next) => {
+    let jobId: string | null = null;
+    try {
+      const chef = requireChef(req);
+      const body = parseBody(ocrImportSchema, req.body);
+      const image = decodeImageDataUrl(body.dataUrl, config.uploads.maxBytes);
+
+      jobId = await db.withChef(chef.id, async (tx) => {
+        const created = await tx.query<{ id: string }>(
+          `insert into import_jobs (chef_id, input_type, input_value, status)
+           values ($1,'ocr',$2,'running') returning id`,
+          [chef.id, body.title?.trim() || "Photo scan (OCR)"],
+        );
+        return created.rows[0].id;
+      });
+
+      const ocr = await recognise(image);
+      if (ocr.text.length < 20) {
+        throw ApiError.badRequest(
+          "We couldn't read any recipe words in that photo. Try again in brighter light with the page flat and straight-on — or paste the recipe text instead.",
+        );
+      }
+
+      let draft = parseRecipeFromText(ocr.text, { title: body.title?.trim() || undefined });
+      draft.sourceType = "manual";
+      if (llmConfigured() && confidenceOf(draft) < 0.8) {
+        const llm = await structureWithLlm({
+          text: ocr.text,
+          title: draft.title,
+          sourceType: "manual",
+          fetchImpl: deps.fetchImpl,
+        });
+        if (llm) draft = mergeDrafts({ ...llm, sourceType: "manual" }, draft);
+      }
+      if (draft.ingredients.length === 0 && draft.steps.length === 0) {
+        draft.description = ocr.text.slice(0, 900);
+      }
+      const tidy = tidyDraft({
+        ...draft,
+        title: draft.title || body.title?.trim() || "Scanned recipe",
+      });
+
+      const warnings = [
+        "Scanned from your photo with OCR — please check every quantity and step with a grown-up before cooking.",
+        ...(ocr.confidence !== null && ocr.confidence < 70
+          ? ["That scan was a little blurry, so some words or numbers may be wrong. You can fix the scan text and re-read it below."]
+          : []),
+        ...(tidy.ingredients.length === 0 && tidy.steps.length === 0
+          ? ["We read the words but couldn't spot the ingredients and steps automatically. Fix the scan text below and tap re-read, or type the ingredients and steps in by hand."]
+          : []),
+        ...warningsFor(tidy, "ocr"),
+      ];
+
+      const updated = await db.withChef(chef.id, async (tx) => {
+        const result = await tx.query<ImportRow>(
+          `update import_jobs
+              set status = 'review', method = 'ocr', confidence = $2, draft = $3, warnings = $4, input_value = $5
+            where id = $1 returning *`,
+          [jobId, confidenceOf(tidy), JSON.stringify(tidy), warnings, ocr.text.slice(0, 20_000)],
+        );
+        return result.rows[0];
+      });
+
+      res.status(201).json({ job: toJobView(updated), ocrText: ocr.text, ocrConfidence: ocr.confidence });
+    } catch (error) {
+      if (jobId) {
+        try {
+          const chef = requireChef(req);
+          const message = error instanceof ApiError ? error.message : "We could not scan that photo.";
+          await db.withChef(chef.id, async (tx) => {
+            await tx.query(
+              `update import_jobs set status = 'failed', error_message = $2 where id = $1`,
+              [jobId, message],
+            );
+          });
+        } catch {
+          /* best-effort bookkeeping only */
+        }
+      }
       next(error);
     }
   });

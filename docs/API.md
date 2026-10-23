@@ -72,12 +72,27 @@ security, not by the UI (see §5).
 ### AI onboarding (import)
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/imports` | `{ inputValue, allowAiFallback?, draftHint? }` — URL, YouTube link, pasted description or dish name. Returns a **review draft** + warnings + confidence |
+| `POST` | `/imports` | `{ inputValue, allowAiFallback?, draftHint? }` — URL, YouTube link, pasted description or **dish name**. Returns a **review draft** + warnings + confidence |
+| `POST` | `/imports/ocr` | `{ dataUrl, title? }` — 📷 scan a recipe photo/screenshot (Tesseract OCR, on-server). Returns `{ job, ocrText, ocrConfidence }`; the job is in `review` like any import, and `ocrText` lets the chef fix the scan and re-read it as a text import |
 | `GET` | `/imports/:id` | Inspect a previous import |
 | `POST` | `/imports/:id/confirm` | Save the (optionally edited) draft into my book; also adds it to the shared catalogue when my role may publish |
 
 Import methods: `jsonld` (schema.org Recipe), `youtube` (video metadata + description),
-`heuristic` (HTML/text parsing), `llm` (AI structuring, requires `LLM_API_KEY`).
+`heuristic` (HTML/text parsing — understands Food Fusion trailing quantities, `tbs`, group
+captions, Roman-Urdu repeats), `ocr` (photo scan), `catalogue` (internal reuse),
+`llm` (AI structuring, requires `LLM_API_KEY`), `manual` (starter draft).
+
+**Dish-name cascade** (`inputValue: "Chicken Balochi Karahi from Food Fusion"`):
+1. My book → shared catalogue — only a *strong* title match short-circuits; a weaker relative
+   (seeded "Chicken Karahi") is kept as a clearly-labelled last resort, never substituted silently.
+2. Website — the requested chef's own site search (Food Fusion, SooperChef, Hebbars Kitchen,
+   Ranveer Brar, Cakes by MK) then a general web search; best recipe cards are imported normally.
+   Listing/search URLs (`?s=…`) are also followed one hop when pasted directly as a link.
+3. YouTube — `"<channel> <dish> recipe"` search; top videos are opened and the recipe is parsed
+   from the **video description** (+ captions when present).
+4. AI draft from the dish name (only with `LLM_API_KEY`).
+5. Otherwise `400` with `details: { next: ["youtube","ocr","paste"], tried: [...] }` — the UI
+   turns this into one-tap YouTube / OCR-scan / paste rescues. It never returns a bare 404.
 
 ### Onboarding interview → portions → shopping list
 | Method | Path | Purpose |
@@ -96,7 +111,7 @@ ingredient, quantities are summed when units agree, and items are grouped by sup
 ### Media
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/uploads` | `{ dataUrl }` (png/jpg/webp ≤ 4 MB) → `/uploads/<file>` |
+| `POST` | `/uploads` | `{ dataUrl }` (png/jpg/webp ≤ 4 MB) → `/api/uploads/<file>` (also served at legacy `/uploads/<file>` locally) |
 
 ---
 

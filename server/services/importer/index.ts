@@ -5,13 +5,34 @@ import { safeFetchPage } from "./fetch.js";
 import { extractJsonLdRecipe, extractPageFallback } from "./jsonld.js";
 import { importFromYouTube, youtubeVideoId } from "./youtube.js";
 import { parseRecipeFromText } from "./text.js";
+import { extractRecipeLinks, rankCardsForDish } from "./links.js";
 import { llmConfigured, structureWithLlm } from "./llm.js";
+
+/** First YouTube video embedded or linked from a recipe page (Food Fusion embeds its video). */
+function embeddedYouTubeId(html: string): string | null {
+  const match = html.match(
+    /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/|youtube-nocookie\.com\/embed\/)([\w-]{6,15})/i,
+  );
+  return match?.[1] ?? null;
+}
+
+/** The dish a listing/search URL is about ("?s=Chicken+Balochi+Karahi", "?q=… recipe"). */
+function dishHintFromUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    const q = parsed.searchParams.get("s") ?? parsed.searchParams.get("q") ?? parsed.searchParams.get("search_query");
+    if (q) return q.replace(/\brecipe\b/gi, "").replace(/\s+/g, " ").trim();
+  } catch {
+    /* fall through */
+  }
+  return titleFromUrl(rawUrl);
+}
 
 export type ImportInputType = "url" | "youtube" | "text" | "dish";
 
 export type ImportOutcome = {
   draft: RecipeDraft;
-  method: "jsonld" | "youtube" | "heuristic" | "llm" | "manual";
+  method: "jsonld" | "youtube" | "heuristic" | "llm" | "manual" | "ocr" | "catalogue";
   confidence: number;
   warnings: string[];
 };
@@ -115,6 +136,8 @@ export type ImportOptions = {
   fetchImpl?: typeof fetch;
   useLlm?: boolean;
   allowAiFallback?: boolean;
+  /** Internal: how many listing/search hops have already been followed. */
+  _depth?: number;
 };
 
 export async function importRecipe(
@@ -220,7 +243,8 @@ export async function importRecipe(
 
     if (draft.ingredients.length === 0 && draft.steps.length === 0) {
       throw ApiError.badRequest(
-        "That video's description has no recipe in it. Paste the recipe text, or try a video with ingredients in the description.",
+        "That video's description has no recipe in it. Try another video for this dish, scan the recipe with OCR (photo/screenshot), or paste the recipe text.",
+        { next: ["youtube", "ocr", "paste"] },
       );
     }
     const tidy = tidyDraft(draft);
@@ -263,9 +287,61 @@ export async function importRecipe(
     }
   }
 
+  // Keep the page's own cooking video attached (in-app player + provenance),
+  // and when the page text is thin, mine that video's description — Food
+  // Fusion puts the full written recipe in both places.
+  const videoId = embeddedYouTubeId(page.html);
+  if (videoId && !draft.sourceVideoId) {
+    draft.sourceVideoId = videoId;
+  }
+  if (videoId && draft.ingredients.length < 3) {
+    try {
+      const fromVideo = await importFromYouTube(`https://www.youtube.com/watch?v=${videoId}`, {
+        fetchImpl: options.fetchImpl,
+      });
+      if (fromVideo.draft.ingredients.length > draft.ingredients.length) {
+        draft = mergeDrafts(
+          { ...fromVideo.draft, sourceUrl: page.url, sourceType: "web" },
+          draft,
+        );
+        draft.sourceVideoId = videoId;
+      }
+    } catch {
+      // The webpage draft still stands on its own.
+    }
+  }
+
+  // Search-results / listing pages (e.g. foodfusion.com/?s=Chicken+Balochi+Karahi
+  // or a DuckDuckGo results page) hold cards, not a recipe. Follow the best
+  // matching card once and import the real recipe page behind it.
+  if (draft.ingredients.length < 3 && (options._depth ?? 0) < 1) {
+    const cards = rankCardsForDish(
+      extractRecipeLinks(page.html, page.url).filter((card) => card.isLikelyRecipe),
+      dishHintFromUrl(page.url),
+    );
+    const best = cards[0];
+    if (best && best.url !== page.url) {
+      try {
+        const followed = await importRecipe(
+          { inputType: "url", inputValue: best.url },
+          { ...options, _depth: (options._depth ?? 0) + 1 },
+        );
+        return {
+          ...followed,
+          warnings: [
+            `That link was a search page, so we opened its best-matching recipe: “${followed.draft.title}”.`,
+            ...followed.warnings,
+          ],
+        };
+      } catch {
+        // Fall through to the honest error below.
+      }
+    }
+  }
+
   if (draft.ingredients.length === 0 && draft.steps.length === 0) {
     throw ApiError.badRequest(
-      "That page does not contain a readable recipe. Try a different link, or paste the recipe text.",
+      "That page does not contain a readable recipe. Try the YouTube tab for this dish (the recipe is usually in the video description), scan a photo with OCR, or paste the recipe text.",
     );
   }
 
