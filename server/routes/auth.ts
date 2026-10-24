@@ -4,7 +4,7 @@ import { ApiError } from "../lib/errors.js";
 import { createChefSchema, parseBody, signInSchema } from "../lib/schemas.js";
 import { rateLimit } from "../lib/rateLimit.js";
 import {
-  CHEF_SELECT, createSession, hashPin, hashToken, listRoles, toProfile, verifyPin,
+  CHEF_SELECT, createSession, forgetSession, hashPin, hashToken, listRoles, toProfile, verifyPin,
   type ChefRow,
 } from "../lib/auth.js";
 import { requireChef } from "../lib/auth.js";
@@ -17,6 +17,8 @@ export function authRoutes(db: Database): Router {
 
   router.get("/roles", async (_req, res, next) => {
     try {
+      // Static reference data: let the browser reuse it for a few minutes.
+      res.setHeader("cache-control", "public, max-age=300, stale-while-revalidate=600");
       res.json({ roles: await listRoles(db) });
     } catch (error) {
       next(error);
@@ -96,6 +98,7 @@ export function authRoutes(db: Database): Router {
       const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
       if (token) {
         await db.query(`delete from chef_sessions where token_hash = $1`, [hashToken(token)]);
+        forgetSession(token);
       }
       res.json({ ok: true });
     } catch (error) {
@@ -108,6 +111,7 @@ export function authRoutes(db: Database): Router {
       const chef = requireChef(req);
       const row = await db.query<ChefRow>(`${CHEF_SELECT} where c.id = $1`, [chef.id]);
       if (!row.rows[0]) throw ApiError.unauthorized();
+      res.setHeader("cache-control", "no-store");
       res.json({ chef: toProfile(row.rows[0]) });
     } catch (error) {
       next(error);
@@ -138,6 +142,9 @@ export function authRoutes(db: Database): Router {
       });
 
       const row = await db.query<ChefRow>(`${CHEF_SELECT} where c.id = $1`, [chef.id]);
+      // The cached session profile still has the old name/avatar.
+      forgetSession(req.token);
+      res.setHeader("cache-control", "no-store");
       res.json({ chef: toProfile(row.rows[0]) });
     } catch (error) {
       next(error);
@@ -172,6 +179,7 @@ export function authRoutes(db: Database): Router {
         return { awarded: true, points: Number(updated.rows[0].points) };
       });
 
+      forgetSession(req.token);
       res.json({ ...outcome, pointsPerRecipe: POINTS_PER_RECIPE });
     } catch (error) {
       next(error);

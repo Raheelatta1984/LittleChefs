@@ -4,7 +4,10 @@ import express, { type NextFunction, type Request, type Response } from "express
 import type { Database } from "./db/index.js";
 import { config } from "./config.js";
 import { optionalChef } from "./lib/auth.js";
+import { cacheStats } from "./lib/cache.js";
 import { ApiError } from "./lib/errors.js";
+import { globalRateLimit } from "./lib/rateLimit.js";
+import { catalogueIndexSnapshot } from "./services/catalogueIndex.js";
 import { authRoutes } from "./routes/auth.js";
 import { recipeRoutes } from "./routes/recipes.js";
 import { importRoutes } from "./routes/import.js";
@@ -37,6 +40,8 @@ export function createApp(db: Database, deps: AppDeps = {}): express.Express {
     }
     res.setHeader("access-control-allow-headers", "content-type, authorization");
     res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    // Let the browser read the limiter's advice on cross-origin responses.
+    res.setHeader("access-control-expose-headers", "retry-after, ratelimit-limit, ratelimit-remaining, ratelimit-reset");
     if (req.method === "OPTIONS") {
       res.sendStatus(204);
       return;
@@ -45,16 +50,24 @@ export function createApp(db: Database, deps: AppDeps = {}): express.Express {
   });
 
   app.get("/api/health", (_req, res) => {
+    res.setHeader("cache-control", "no-store");
     res.json({
       ok: true,
       driver: config.db.driver,
       llm: Boolean(config.llm.apiKey),
       time: new Date().toISOString(),
+      // Cheap, detail-free insight into the load-shedding layer.
+      cache: config.cache.enabled ? cacheStats() : { caches: [], entries: 0, hitRate: 0 },
+      catalogueIndex: catalogueIndexSnapshot(),
+      rateLimit: { enabled: config.rateLimit.enabled, globalMaxPerMinute: config.rateLimit.globalMax },
     });
   });
 
   const chef = optionalChef(db);
+  // Authenticate first so the limiter can key signed-in chefs by identity
+  // (several kids behind one home router should not share a single bucket).
   app.use("/api", chef);
+  app.use("/api", globalRateLimit());
   app.use("/api", authRoutes(db));
   app.use("/api", catalogueRoutes(db));
   app.use("/api", recipeRoutes(db));

@@ -5,6 +5,7 @@ import type { Database, Queryable } from "../db/index.js";
 import type { ChefProfile, RoleId, Role } from "../../shared/types.js";
 import { ApiError } from "./errors.js";
 import { config } from "../config.js";
+import { TtlCache, cachedLoad } from "./cache.js";
 
 const scrypt = promisify(scryptCb);
 
@@ -32,13 +33,34 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * Session lookups run on *every* authenticated request, so a chef who taps
+ * through the app used to cost one database query per tap. The profile is
+ * cached per token hash (30 s by default) and unknown/expired tokens are
+ * cached negatively for a shorter time, so a flood of made-up bearer tokens
+ * never reaches Postgres at all.
+ */
+const sessionCache = new TtlCache<ChefRow | null>({
+  name: "sessions",
+  max: config.cache.maxEntries,
+  ttlMs: config.cache.sessionTtlMs,
+});
+
+/** Drops a cached session (sign-out, profile edit, revoked token). */
+export function forgetSession(token: string | undefined): void {
+  if (!token) return;
+  sessionCache.delete(`token:${hashToken(token)}`);
+}
+
 export async function createSession(db: Database, chefId: string): Promise<{ token: string; expiresAt: string }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + config.auth.sessionDays * 86_400_000).toISOString();
+  const tokenHash = hashToken(token);
   await db.query(
     `insert into chef_sessions (token_hash, chef_id, expires_at) values ($1, $2, $3)`,
-    [hashToken(token), chefId, expiresAt],
+    [tokenHash, chefId, expiresAt],
   );
+  sessionCache.delete(`token:${tokenHash}`);
   return { token, expiresAt };
 }
 
@@ -78,15 +100,42 @@ export function toProfile(row: ChefRow): ChefProfile {
 
 export async function findChefByToken(db: Database, token: string): Promise<ChefRow | null> {
   const hash = hashToken(token);
-  const result = await db.query<ChefRow>(
-    `${CHEF_SELECT} join chef_sessions s on s.chef_id = c.id
-     where s.token_hash = $1 and s.expires_at > now()`,
-    [hash],
-  );
-  return result.rows[0] ?? null;
+  const key = `token:${hash}`;
+
+  const load = async (): Promise<ChefRow | null> => {
+    const result = await db.query<ChefRow>(
+      `${CHEF_SELECT} join chef_sessions s on s.chef_id = c.id
+       where s.token_hash = $1 and s.expires_at > now()`,
+      [hash],
+    );
+    return result.rows[0] ?? null;
+  };
+
+  if (!config.cache.enabled) return load();
+
+  const cached = sessionCache.get(key);
+  if (cached !== undefined) return cached;
+
+  return cachedLoad(sessionCache, key, load, {
+    ttlMs: config.cache.sessionTtlMs,
+    negativeTtlMs: config.cache.sessionNegativeTtlMs,
+    cacheNegative: (row) => row === null,
+  });
 }
 
+/** Roles are static reference data — cached because every client fetches them on boot. */
+const rolesCache = new TtlCache<Role[]>({
+  name: "roles",
+  max: 4,
+  ttlMs: config.cache.rolesTtlMs,
+});
+
 export async function listRoles(db: Database): Promise<Role[]> {
+  if (!config.cache.enabled) return queryRoles(db);
+  return cachedLoad(rolesCache, "all", () => queryRoles(db));
+}
+
+async function queryRoles(db: Database): Promise<Role[]> {
   const result = await db.query<{
     id: RoleId; label: string; ages: string; emoji: string; rank: number; description: string;
     can_publish: boolean; requires_grownup: boolean; max_batch_servings: number;

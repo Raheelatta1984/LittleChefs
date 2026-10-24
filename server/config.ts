@@ -39,6 +39,43 @@ export const config = {
   auth: {
     sessionDays: num(process.env.SESSION_TTL_DAYS, 30),
   },
+  /**
+   * In-process caches that keep hot reads (sessions, internal lookups, the
+   * shared catalogue) away from Postgres. Every value is short-lived and every
+   * write path invalidates what it touched, so a second API instance can never
+   * serve a stale recipe for long. Set CACHE_ENABLED=false to disable them all
+   * (tests, debugging).
+   */
+  cache: {
+    enabled: bool(process.env.CACHE_ENABLED, true),
+    /** Every cache is an LRU bounded to this many entries. */
+    maxEntries: num(process.env.CACHE_MAX_ENTRIES, 5_000),
+    /** A signed-in chef's profile/session is reused for this long. */
+    sessionTtlMs: num(process.env.CACHE_SESSION_TTL_MS, 30_000),
+    /** Unknown/expired bearer tokens: never re-hashed against the DB this often. */
+    sessionNegativeTtlMs: num(process.env.CACHE_SESSION_NEGATIVE_TTL_MS, 10_000),
+    /** Repeat searches for the same dish within this window skip the database. */
+    lookupTtlMs: num(process.env.CACHE_LOOKUP_TTL_MS, 20_000),
+    /** Dish names that matched nothing are remembered for this long. */
+    negativeTtlMs: num(process.env.CACHE_NEGATIVE_TTL_MS, 15_000),
+    /** Shared catalogue list rows (title/counts) — no chef-specific data. */
+    catalogueListTtlMs: num(process.env.CACHE_CATALOGUE_LIST_TTL_MS, 30_000),
+    /** A chef's "which catalogue recipes do I already own" set. */
+    chefCatalogueTtlMs: num(process.env.CACHE_CHEF_CATALOGUE_TTL_MS, 20_000),
+    /** Full canonical recipe payload (ingredients + steps). */
+    catalogueRecipeTtlMs: num(process.env.CACHE_CATALOGUE_RECIPE_TTL_MS, 120_000),
+    /** Missing recipe ids are remembered this long (404 without a query). */
+    catalogueRecipeNegativeTtlMs: num(process.env.CACHE_CATALOGUE_RECIPE_NEGATIVE_TTL_MS, 15_000),
+    /** Roles catalogue — static reference data. */
+    rolesTtlMs: num(process.env.CACHE_ROLES_TTL_MS, 300_000),
+    /** How often the in-memory Bloom filter is rebuilt from the database. */
+    catalogueIndexTtlMs: num(process.env.CACHE_CATALOGUE_INDEX_TTL_MS, 60_000),
+  },
+  rateLimit: {
+    enabled: bool(process.env.RATE_LIMIT_ENABLED, true),
+    /** App-wide ceiling per caller per minute (route-specific limits are lower). */
+    globalMax: num(process.env.RATE_LIMIT_GLOBAL_MAX, 600),
+  },
   imports: {
     timeoutMs: num(process.env.IMPORT_TIMEOUT_MS, 12_000),
     maxBytes: num(process.env.IMPORT_MAX_BYTES, 2_500_000),
