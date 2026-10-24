@@ -10,7 +10,6 @@ import type {
 import { api, freshDatabase, startTestServer } from "./helpers.js";
 import type { Database } from "../server/db/index.js";
 import { importRecipe } from "../server/services/importer/index.js";
-import { parseIngredientLine } from "../server/services/importer/parse.js";
 import { parseRecipeFromText } from "../server/services/importer/text.ts";
 import { tidyPageTitle } from "../server/services/importer/jsonld.js";
 import { detectPageRecipe } from "../server/services/browser.js";

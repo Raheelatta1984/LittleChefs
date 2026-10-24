@@ -162,6 +162,34 @@ notes, edits, photos, rating or identity — only the canonical content and its 
 
 ---
 
+## 4b. Load shedding (caches, Bloom filter, negative caching)
+
+The read paths are protected in four layers, cheapest first:
+
+1. **In-process caches** (`server/lib/cache.ts`) — bounded LRU maps with per-entry TTLs.
+   * `sessions` — token hash → chef profile (30 s). Unknown tokens are cached as `null`
+     for 10 s (negative cache), so junk bearer tokens never reach Postgres.
+   * `internal-lookup` — per-chef search results, misses included (20 s / 15 s).
+   * `catalogue-list`, `chef-catalogue-ids`, `catalogue-recipe` — shared catalogue rows,
+     the chef's owned catalogue ids and full recipe payloads.
+   * `roles` — static reference data (5 min).
+   Every write invalidates the entries it affects: saving/claiming/deleting a recipe clears that
+   chef's lookups; catalogue inserts clear the catalogue caches and the lookup cache.
+2. **Bloom filter** (`server/lib/bloom.ts` + `server/services/catalogueIndex.ts`) — holds every
+   catalogue dedupe key, normalised title and title token. A search whose tokens are *all* absent
+   from the filter cannot match by exact key, containment or Jaccard similarity, so both catalogue
+   queries (and the 500-row fuzzy scan) are skipped. False positives are harmless (they just hit the
+   DB); the filter is fed on every catalogue write and rebuilt from the database every 60 s.
+3. **Request coalescing** — `singleFlight` merges concurrent identical loads (ten simultaneous
+   searches for one dish = one query).
+4. **Databases** — the remaining reads are index-backed (`003_performance_indexes.sql`).
+
+Caches are process-local, so with several API instances the worst case is one TTL of staleness
+(`CACHE_*` env vars in `.env.example` control every window). Set `CACHE_ENABLED=false` to bypass the
+whole layer.
+
+---
+
 ## 5. Security model
 
 * The API runs every user-data statement inside a transaction that does
@@ -173,7 +201,19 @@ notes, edits, photos, rating or identity — only the canonical content and its 
   loopback, link-local and CGNAT ranges, redirect cap, byte cap and timeout.
 * Passwords/PINs: optional 4-digit PIN hashed with scrypt + random salt.
 * Tokens: 32-byte random, stored only as SHA-256 hashes, 30-day expiry.
-* Rate limits: auth (40 / 10 min), imports (20 / 5 min), uploads (40 / 10 min) per IP.
+* Rate limits (token bucket, per chef when signed in, per IP otherwise):
+  * global — 600 requests / minute on every `/api` call,
+  * auth (`/chefs`, `/chefs/sign-in`) — 40 / 10 min,
+  * imports (`/imports`, `/imports/ocr`) — 20 / 5 min,
+  * uploads — 40 / 10 min,
+  * browsing — 60 / 5 min.
+
+  A limited response is `429` with `Retry-After` seconds and `RateLimit-Limit`,
+  `RateLimit-Remaining`, `RateLimit-Reset` headers:
+  `{ "error": "rate_limited", "retryAfter": 12, "message": "Too many requests. Please wait 12 seconds and try again." }`
+* Caching (`Cache-Control`) is set per route: static roles `public, max-age=300`;
+  shared catalogue list/detail `private, max-age=15–60`; personal recipe book `no-store`;
+  health `no-store`. `GET /api/health` also reports cache hit rates and the Bloom-filter size.
 * Catalogue responses never select `created_by_chef`.
 
 ---

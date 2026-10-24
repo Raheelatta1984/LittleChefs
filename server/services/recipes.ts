@@ -1,5 +1,9 @@
 import type { Database, Queryable, Row } from "../db/index.js";
 import type { Ingredient, InternalMatch, RecipeDraft, RecipeView, Step } from "../../shared/types.js";
+import { config } from "../config.js";
+import { TtlCache, cachedLoad, singleFlight } from "../lib/cache.js";
+import { invalidateChefCatalogue, invalidateCatalogueCaches } from "./catalogue.js";
+import { catalogueMightContainDish, noteCatalogueRecipe } from "./catalogueIndex.js";
 import { dedupeKey, isSameDish, normaliseDishName } from "./normalise.js";
 
 type IngredientRow = Row & {
@@ -57,7 +61,39 @@ export function mapStep(row: StepRow): Step {
 const INGREDIENT_COLUMNS = `id, position, quantity, unit, item, prep_note, group_name, scalable, raw_text`;
 const STEP_COLUMNS = `id, position, instruction, duration_seconds, temperature_c, image_url, tip`;
 
+/**
+ * Cached canonical recipe payloads.
+ *
+ * A catalogue recipe is immutable once written (a "claim" copies it into the
+ * chef's book instead of editing it), so it can be reused for minutes. Missing
+ * ids are remembered too: a stale link or a deleted recipe no longer runs three
+ * queries on every page load.
+ */
+const catalogueRecipeCache = new TtlCache<RecipeDraft | null>({
+  name: "catalogue-recipe",
+  max: Math.max(100, Math.floor(config.cache.maxEntries / 5)),
+  ttlMs: config.cache.catalogueRecipeTtlMs,
+});
+
+const internalLookupCache = new TtlCache<{
+  myRecipes: InternalMatch[];
+  sharedMatches: InternalMatch[];
+}>({
+  name: "internal-lookup",
+  max: config.cache.maxEntries,
+  ttlMs: config.cache.lookupTtlMs,
+});
+
 export async function loadCatalogueRecipe(db: Queryable, id: string): Promise<RecipeDraft | null> {
+  if (!config.cache.enabled) return queryCatalogueRecipe(db, id);
+  return cachedLoad(catalogueRecipeCache, id, () => queryCatalogueRecipe(db, id), {
+    ttlMs: config.cache.catalogueRecipeTtlMs,
+    negativeTtlMs: config.cache.catalogueRecipeNegativeTtlMs,
+    cacheNegative: (value) => value === null,
+  });
+}
+
+async function queryCatalogueRecipe(db: Queryable, id: string): Promise<RecipeDraft | null> {
   const recipe = await db.query<RecipeRow>(`select * from catalogue_recipes where id = $1`, [id]);
   const row = recipe.rows[0];
   if (!row) return null;
@@ -223,7 +259,10 @@ export async function insertCatalogueRecipe(
     `select id from catalogue_recipes where dedupe_key = $1`,
     [key],
   );
-  if (existing.rows[0]) return { id: existing.rows[0].id, created: false };
+  if (existing.rows[0]) {
+    noteCatalogueRecipe(draft.title);
+    return { id: existing.rows[0].id, created: false };
+  }
 
   const inserted = await db.query<{ id: string }>(
     `insert into catalogue_recipes
@@ -242,6 +281,10 @@ export async function insertCatalogueRecipe(
   const catalogueId = inserted.rows[0].id;
   await writeChildren(db, "catalogue_ingredients", "catalogue_id", catalogueId, draft.ingredients);
   await writeChildren(db, "catalogue_steps", "catalogue_id", catalogueId, draft.steps);
+  // Keep the Bloom index and every cached catalogue read in step with the write.
+  noteCatalogueRecipe(draft.title);
+  catalogueRecipeCache.delete(catalogueId);
+  invalidateInternalLookups();
   return { id: catalogueId, created: true };
 }
 
@@ -306,12 +349,21 @@ export async function insertChefRecipe(
   const recipeId = inserted.rows[0].id;
   await writeChildren(tx, "chef_recipe_ingredients", "chef_recipe_id", recipeId, draft.ingredients);
   await writeChildren(tx, "chef_recipe_steps", "chef_recipe_id", recipeId, draft.steps);
+  // The chef's book changed: their cached searches (including negative ones)
+  // would otherwise hide this recipe for the length of the TTL.
+  invalidateChefLookups(chefId);
   return recipeId;
 }
 
-export async function deleteChefRecipe(tx: Queryable, id: string): Promise<boolean> {
+export async function deleteChefRecipe(
+  tx: Queryable,
+  id: string,
+  chefId?: string,
+): Promise<boolean> {
   const result = await tx.query(`delete from chef_recipes where id = $1 returning id`, [id]);
-  return result.rows.length > 0;
+  const removed = result.rows.length > 0;
+  if (removed && chefId) invalidateChefLookups(chefId);
+  return removed;
 }
 
 /** Updates a chef's own recipe (RLS guarantees ownership). */
@@ -320,6 +372,7 @@ export async function updateChefRecipe(
   id: string,
   draftInput: RecipeDraft,
   notes: string | null,
+  chefId?: string,
 ): Promise<RecipeView | null> {
   const draft = normalizeDraft(draftInput);
   const updated = await tx.query<{ id: string }>(
@@ -339,6 +392,7 @@ export async function updateChefRecipe(
   await tx.query(`delete from chef_recipe_steps where chef_recipe_id = $1`, [id]);
   await writeChildren(tx, "chef_recipe_ingredients", "chef_recipe_id", id, draft.ingredients);
   await writeChildren(tx, "chef_recipe_steps", "chef_recipe_id", id, draft.steps);
+  if (chefId) invalidateChefLookups(chefId);
   return loadChefRecipe(tx, id);
 }
 
@@ -376,9 +430,12 @@ export async function ensureCatalogueRecipe(
   if (existingId) {
     const existing = await loadCatalogueRecipe(db, existingId);
     if (existing && existing.steps.length > 0 && existing.ingredients.length > 0) {
+      noteCatalogueRecipe(draft.title);
       return { id: existingId, created: false };
     }
     await db.query(`delete from catalogue_recipes where id = $1`, [existingId]);
+    catalogueRecipeCache.delete(existingId);
+    invalidateInternalLookups();
   }
   return insertCatalogueRecipe(db, draft, chefId);
 }
@@ -427,6 +484,12 @@ function toMatch(row: {
  * Internal-first lookup. Own recipes are read through RLS (so only yours),
  * the shared catalogue is read canonically and never exposes the chef who
  * imported it.
+ *
+ * Repeat lookups are served from a short-lived per-chef cache (negative
+ * results included) so the same miss — the common case for a chef trying a
+ * dish name that has to be imported — costs zero database work. When the Bloom
+ * index proves the shared catalogue cannot contain this dish, even the
+ * catalogue query and its 500-row fuzzy fallback are skipped.
  */
 export async function findInternalMatches(
   db: Database,
@@ -437,6 +500,46 @@ export async function findInternalMatches(
   if (!normalised) return { myRecipes: [], sharedMatches: [] };
   const key = dedupeKey(query);
 
+  if (!config.cache.enabled) return lookupInternalMatches(db, chefId, key, normalised);
+
+  const cacheKey = `${chefId}|${key}|${normalised}`;
+  const cached = internalLookupCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  // Coalesce identical concurrent searches from the same chef.
+  return singleFlight(`lookup:${cacheKey}`, async () => {
+    const filled = internalLookupCache.get(cacheKey);
+    if (filled !== undefined) return filled;
+    const result = await lookupInternalMatches(db, chefId, key, normalised);
+    const isEmpty = result.myRecipes.length === 0 && result.sharedMatches.length === 0;
+    internalLookupCache.set(
+      cacheKey,
+      result,
+      isEmpty ? config.cache.negativeTtlMs : config.cache.lookupTtlMs,
+    );
+    return result;
+  });
+}
+
+/** Drops cached lookups for one chef after their book changed. */
+export function invalidateChefLookups(chefId: string): void {
+  internalLookupCache.deleteByPrefix(`${chefId}|`);
+  invalidateChefCatalogue(chefId);
+}
+
+/** Drops every cached lookup after the shared catalogue changed. */
+export function invalidateInternalLookups(): void {
+  internalLookupCache.clear();
+  catalogueRecipeCache.clear();
+  invalidateCatalogueCaches();
+}
+
+async function lookupInternalMatches(
+  db: Database,
+  chefId: string,
+  key: string,
+  normalised: string,
+): Promise<{ myRecipes: InternalMatch[]; sharedMatches: InternalMatch[] }> {
   const myRecipes = await db.withChef(chefId, async (tx) => {
     const rows = await tx.query<{
       id: string; catalogue_id: string | null; title: string; normalised_title: string;
@@ -473,28 +576,40 @@ export async function findInternalMatches(
       .map((row) => toMatch(row, "my-recipes"));
   });
 
-  const catalogueRows = await db.query<{
-    id: string; title: string; normalised_title: string; cuisine: string | null;
-    hero_image_url: string | null; base_servings: number; total_minutes: number | null;
-    ingredient_count: string; step_count: string;
-  }>(
-    `select c.id, c.title, c.normalised_title, c.cuisine, c.hero_image_url, c.base_servings,
-            c.total_minutes,
-            (select count(*) from catalogue_ingredients i where i.catalogue_id = c.id) as ingredient_count,
-            (select count(*) from catalogue_steps s where s.catalogue_id = c.id) as step_count
-       from catalogue_recipes c
-      where c.dedupe_key = $1
-         or c.normalised_title = $2
-         or exists (
-              select 1 from catalogue_aliases a
-               where a.catalogue_id = c.id and (a.normalised = $2 or a.normalised = $1)
-            )
-      limit 20`,
-    [key, normalised],
-  );
+  // ── Negative caching + Bloom gate for the shared catalogue ────────────────
+  // When the in-memory index proves no catalogue title can match this dish,
+  // skip both queries. The filter is one-sided: it only ever says "definitely
+  // not there", and any "maybe" keeps the original database path.
+  const catalogueMaybe = await catalogueMightContainDish(db, key, normalised);
+
+  const catalogueRows = catalogueMaybe
+    ? await db.query<{
+        id: string; title: string; normalised_title: string; cuisine: string | null;
+        hero_image_url: string | null; base_servings: number; total_minutes: number | null;
+        ingredient_count: string; step_count: string;
+      }>(
+        `select c.id, c.title, c.normalised_title, c.cuisine, c.hero_image_url, c.base_servings,
+                c.total_minutes,
+                (select count(*) from catalogue_ingredients i where i.catalogue_id = c.id) as ingredient_count,
+                (select count(*) from catalogue_steps s where s.catalogue_id = c.id) as step_count
+           from catalogue_recipes c
+          where c.dedupe_key = $1
+             or c.normalised_title = $2
+             or exists (
+                  select 1 from catalogue_aliases a
+                   where a.catalogue_id = c.id and (a.normalised = $2 or a.normalised = $1)
+                )
+          limit 20`,
+        [key, normalised],
+      )
+    : { rows: [] as Array<{
+        id: string; title: string; normalised_title: string; cuisine: string | null;
+        hero_image_url: string | null; base_servings: number; total_minutes: number | null;
+        ingredient_count: string; step_count: string;
+      }> };
 
   let sharedRows = catalogueRows.rows;
-  if (sharedRows.length === 0) {
+  if (catalogueMaybe && sharedRows.length === 0) {
     const recent = await db.query<{
       id: string; title: string; normalised_title: string; cuisine: string | null;
       hero_image_url: string | null; base_servings: number; total_minutes: number | null;

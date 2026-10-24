@@ -5,7 +5,7 @@ import { requireChef } from "../lib/auth.js";
 import { draftSchema, onboardingSchema, parseBody } from "../lib/schemas.js";
 import {
   claimCatalogueRecipe, deleteChefRecipe, findInternalMatches, insertChefRecipe,
-  listChefRecipes, loadChefRecipe, updateChefRecipe,
+  invalidateChefLookups, listChefRecipes, loadChefRecipe, updateChefRecipe,
 } from "../services/recipes.js";
 import { normaliseDishName } from "../services/normalise.js";
 import { runOnboarding, getShoppingList, toggleShoppingItem, completeShoppingList } from "../services/onboarding.js";
@@ -21,6 +21,8 @@ export function recipeRoutes(db: Database): Router {
       if (!query) throw ApiError.badRequest("Type a dish name to search.");
 
       const { myRecipes, sharedMatches } = await findInternalMatches(db, chef.id, query);
+      // Personal data: browser may reuse it for a moment, shared caches never.
+      res.setHeader("cache-control", "private, max-age=10");
       res.json({
         query,
         normalisedQuery: normaliseDishName(query),
@@ -42,6 +44,7 @@ export function recipeRoutes(db: Database): Router {
   router.get("/recipes", async (req, res, next) => {
     try {
       const chef = requireChef(req);
+      res.setHeader("cache-control", "private, no-store");
       const recipes = await db.withChef(chef.id, (tx) => listChefRecipes(tx));
       res.json({ recipes });
     } catch (error) {
@@ -88,7 +91,7 @@ export function recipeRoutes(db: Database): Router {
       const recipe = await db.withChef(chef.id, async (tx) => {
         const existing = await loadChefRecipe(tx, req.params.id);
         if (!existing) throw ApiError.notFound("That recipe is not in your book.");
-        return updateChefRecipe(tx, req.params.id, draft, notes);
+        return updateChefRecipe(tx, req.params.id, draft, notes, chef.id);
       });
       if (!recipe) throw ApiError.notFound("That recipe is not in your book.");
       res.json({ recipe });
@@ -100,8 +103,9 @@ export function recipeRoutes(db: Database): Router {
   router.delete("/recipes/:id", async (req, res, next) => {
     try {
       const chef = requireChef(req);
-      const removed = await db.withChef(chef.id, (tx) => deleteChefRecipe(tx, req.params.id));
+      const removed = await db.withChef(chef.id, (tx) => deleteChefRecipe(tx, req.params.id, chef.id));
       if (!removed) throw ApiError.notFound("That recipe is not in your book.");
+      invalidateChefLookups(chef.id);
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -129,6 +133,7 @@ export function recipeRoutes(db: Database): Router {
       const chef = requireChef(req);
       const { recipeId, alreadyOwned } = await claimCatalogueRecipe(db, chef.id, req.params.id);
       const recipe = await db.withChef(chef.id, (tx) => loadChefRecipe(tx, recipeId));
+      invalidateChefLookups(chef.id);
       res.status(alreadyOwned ? 200 : 201).json({ recipe, alreadyOwned });
     } catch (error) {
       if (error instanceof Error && error.message === "catalogue recipe not found") {

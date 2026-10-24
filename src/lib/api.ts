@@ -43,10 +43,31 @@ export function saveAuth(auth: AuthState | null): void {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: { method?: string; body?: unknown; token?: string | null } = {},
-): Promise<T> {
+type RequestOptions = { method?: string; body?: unknown; token?: string | null };
+
+/**
+ * Identical GETs already on the wire are shared instead of fired twice.
+ * React strict mode, a double-tapped button or two components mounting at once
+ * all produce the same URL — they should cost one request, not three.
+ */
+const inFlightGets = new Map<string, Promise<unknown>>();
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
+  if (method !== "GET") return perform<T>(path, { ...options, method });
+
+  const key = `${method} ${path} ${options.token ?? ""}`;
+  const existing = inFlightGets.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const promise = perform<T>(path, { ...options, method }).finally(() => {
+    inFlightGets.delete(key);
+  });
+  inFlightGets.set(key, promise as Promise<unknown>);
+  return promise;
+}
+
+async function perform<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${BASE}${path}`, {
@@ -80,9 +101,11 @@ async function request<T>(
     const fallback =
       response.status === 404
         ? "The recipe kitchen isn't responding (404). On a computer, run `npm run dev` to start the app and kitchen together. If you're using the online app, its owner needs to deploy the API too."
-        : response.status >= 500
-          ? "The recipe kitchen server hiccupped. Wait a few seconds and try again."
-          : `Something went wrong (${response.status}). Please try again.`;
+        : response.status === 429
+          ? "Whoa, that was a lot of tapping! Wait a few seconds and try again."
+          : response.status >= 500
+            ? "The recipe kitchen server hiccupped. Wait a few seconds and try again."
+            : `Something went wrong (${response.status}). Please try again.`;
     throw new ApiClientError(response.status, body?.message ?? fallback, body?.details);
   }
   return payload as T;

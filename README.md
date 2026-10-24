@@ -53,6 +53,37 @@ When anyone searches a dish:
 
 So the same dish is never imported twice, yet no chef can see another chef's book, notes or photos.
 
+### 🛡️ Load protection — caches, Bloom filters & rate limits
+Every tap used to mean a round-trip to Postgres. The API now sheds load before it ever reaches the
+database, and degrades gracefully when someone (or a buggy client) hammers it:
+
+* **Session cache + negative cache** — a validated bearer token reuses its chef profile for 30 s;
+  made-up or expired tokens are cached as "no" for 10 s, so a flood of junk credentials costs *zero*
+  queries. Sign-out, profile edits and point awards invalidate immediately.
+* **Bloom filter over the shared catalogue** — an in-memory index of every catalogue title, its
+  dedupe key and its tokens. When a dish cannot possibly be in the catalogue ("moonbeam comet pie")
+  the search skips both the catalogue query *and* the 500-row fuzzy fallback. It only ever answers
+  "definitely not" (never hiding a real recipe), is updated on every write and is rebuilt from the
+  database at most once a minute.
+* **Negative caching for lookups** — repeat searches and 404s (missing `catalogue/:id`) are
+  remembered briefly, so a chef refreshing the same dead end is answered from memory. Writes
+  (save, claim, delete, import confirm) invalidate that chef's entries straight away.
+* **Coalesced requests** — concurrent identical lookups share one query (`single-flight`), so ten
+  taps in the same second cost one database read. The web app also de-duplicates identical GETs.
+* **Cached shared catalogue** — catalogue rows are chef-independent and cached per search shape,
+  while "is it in my book?" is one small cached id set instead of a per-row subquery.
+* **Token-bucket rate limiting** — the old fixed window was replaced by a smooth token bucket with
+  bounded, self-expiring state (no timers, no unbounded memory). Every `/api` call is capped at
+  600/min per chef (per IP when signed out) on top of the route limits below, and answers `429` with
+  `Retry-After` + `RateLimit-*` headers and a friendly message.
+* **Hot-path indexes** — migration `003_performance_indexes.sql` adds the missing indexes for
+  sign-in (`role_id, lower(display_name)`), per-chef title lookups, ownership checks, import history,
+  onboarding and shopping lists.
+
+`GET /api/health` now reports cache hit rates, Bloom-filter size and the limiter configuration, so
+you can see the effect without a profiler. Everything is tunable through `CACHE_*` / `RATE_LIMIT_*`
+environment variables (see `.env.example`) and can be switched off entirely with `CACHE_ENABLED=false`.
+
 ### 🤖 AI recipe onboarding (website · YouTube · pasted text)
 - Accepts a recipe URL, a YouTube video link, a pasted video description, or just a dish name.
 - Extraction order: `schema.org` JSON-LD → YouTube metadata + description → heuristic HTML/text
@@ -125,7 +156,7 @@ The first API start creates the database, runs migrations and seeds the built-in
 | `npm run db:seed` | Load built-in recipes into the shared catalogue |
 | `npm run db:reset` | Delete the local PGlite data and rebuild |
 | `npm run build:api` | Compile the API to `dist-server/` (used by the Vercel function) |
-| `npm test` | 115 tests: RLS isolation, scaling, aisles, importers (incl. a recorded Woolworths recipe page), page-clutter filtering, dish cascade, OCR, SSRF, full API, Vercel routing |
+| `npm test` | 143 tests: RLS isolation, scaling, aisles, importers (incl. a recorded Woolworths recipe page), page-clutter filtering, dish cascade, OCR, SSRF, full API, Vercel routing |
 | `npm run typecheck` | Type-check app + server |
 
 ### ▲ Deploying to Vercel (static app + serverless API)
@@ -179,6 +210,7 @@ LLM_MODEL=gpt-4o-mini
 
 React 19 + TypeScript + Vite 7 · Tailwind CSS 4 · Express 5 API ·
 PostgreSQL 16 (PGlite locally, `pg` for hosted) · Zod validation · `node:test`
+· in-process TTL/LRU caches + Bloom filter + token-bucket limiter (no extra dependencies)
 TheMealDB for online search · `youtube-nocookie` embeds.
 
 **Docs:** [API & data model](./docs/API.md) ·
