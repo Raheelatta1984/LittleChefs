@@ -141,7 +141,24 @@ before(async () => {
   upstreamOrigin = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
 
   db = await freshDatabase();
-  appServer = await startTestServer(db);
+  appServer = await startTestServer(db, {
+    fetchImpl: async (input, init) => {
+      const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
+      if (url.startsWith("https://www.youtube.com/oembed?")) {
+        return new Response(JSON.stringify({ title: "Sindhi Chicken Biryani", author_name: "Food Fusion" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "https://www.youtube.com/watch?v=AbCdEfGh123") {
+        return new Response(
+          '<meta name="title" content="Sindhi Chicken Biryani"><meta name="description" content="Ingredients:\n2 cups rice\nMethod:\nCook rice.">',
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return fetch(input, init);
+    },
+  });
   const created = await api<{ token: string; chef: ChefProfile }>(appServer.base, "/chefs", {
     method: "POST",
     body: { displayName: "Zara", role: "adult", avatar: "girl2" },
@@ -163,6 +180,13 @@ describe("in-app browser HTML sanitization & link extraction", () => {
     assert.doesNotMatch(clean, /application\/ld\+json/i);
     assert.match(clean, /<base href="https:\/\/chef\.example\/recipes\/biryani">/);
     assert.match(clean, /chef-browser:navigate/);
+  });
+
+  it("escapes hostile preview-base attributes instead of creating executable markup", () => {
+    const clean = sanitizeHtmlForPreview("<html><head></head><body>safe</body></html>", 'https://chef.example/\"><script>alert(1)</script>?x=\'&y=<img src=x onerror=alert(1)>');
+    assert.doesNotMatch(clean, /<base[^>]*><script>alert\(1\)/i);
+    assert.match(clean, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.match(clean, /&amp;y=&lt;img src=x onerror=alert\(1\)&gt;/);
   });
 
   it("extracts recipe cards with resolved links and thumbnails while skipping login/social noise", () => {

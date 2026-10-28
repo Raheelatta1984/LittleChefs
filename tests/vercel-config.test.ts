@@ -20,6 +20,7 @@ const vercelConfig = JSON.parse(readFileSync(resolve(root, "vercel.json"), "utf8
   buildCommand?: string;
   outputDirectory?: string;
   rewrites?: { source?: string; destination?: string }[];
+  headers?: { source?: string; headers?: { key?: string; value?: string }[] }[];
   functions?: Record<string, unknown>;
 };
 
@@ -43,6 +44,16 @@ describe("vercel.json routes every /api/* path to the serverless function", () =
     const spaFallback = rewrites.find((rule) => rule.destination === "/index.html");
     assert.ok(spaFallback, "deep links should fall back to the built single-page app");
     assert.match(String(spaFallback?.source), /\(\?!api/, "the SPA fallback must not swallow /api requests");
+  });
+
+  it("applies browser security headers to static and API responses", () => {
+    const headers = vercelConfig.headers?.find((entry) => entry.source === "/(.*)")?.headers ?? [];
+    const value = (key: string) => headers.find((header) => header.key?.toLowerCase() === key)?.value;
+    assert.match(value("content-security-policy") ?? "", /frame-ancestors 'none'/);
+    assert.match(value("content-security-policy-report-only") ?? "", /script-src 'self'/);
+    assert.equal(value("x-content-type-options"), "nosniff");
+    assert.equal(value("x-frame-options"), "DENY");
+    assert.match(value("strict-transport-security") ?? "", /max-age=31536000/);
   });
 
   it("attaches the function settings to api/index.js", () => {

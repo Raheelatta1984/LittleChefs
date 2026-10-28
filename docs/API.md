@@ -2,7 +2,7 @@
 
 Base URL: `/api` (Vite proxies it to `http://127.0.0.1:8787` in development).
 
-Auth: `Authorization: Bearer <token>` returned by `POST /chefs` or `POST /chefs/sign-in`.
+Auth: browsers receive an opaque session in an HttpOnly, Secure, SameSite=Lax cookie from `POST /chefs` or `POST /chefs/sign-in`. Unsafe cookie-authenticated requests must carry a same-origin `Origin` (or `Referer`) header. Non-browser clients may send `X-Auth-Transport: bearer` on sign-up/sign-in to receive a token, then use `Authorization: Bearer <token>`; the API stores only its hash.
 
 ---
 
@@ -26,9 +26,9 @@ security, not by the UI (see §5).
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/roles` | Role list + capabilities (public) |
-| `POST` | `/chefs` | Create a chef profile, returns `{ chef, token }` |
+| `POST` | `/chefs` | Create a chef profile and browser session (explicit bearer clients receive `{ chef, token }`) |
 | `POST` | `/chefs/sign-in` | Sign back in with name + role (+ PIN if set) |
-| `POST` | `/chefs/sign-out` | Revoke the current token |
+| `POST` | `/chefs/sign-out` | Revoke the current session and clear its cookie |
 | `GET` | `/me` | Current chef profile |
 | `PATCH` | `/me` | Update name / avatar / PIN |
 | `POST` | `/me/cook-completion` | Award 50 points once per unique cooked dish |

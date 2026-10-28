@@ -122,7 +122,7 @@ describe("UI renders without crashing", () => {
 
   it("renders the importer input stage", () => {
     const html = renderToString(
-      createElement(RecipeImporter, { token: "t", canPublish: true, initialQuery: "", onClose: noop, onSaved: noop }),
+      createElement(RecipeImporter, { canPublish: true, initialQuery: "", onClose: noop, onSaved: noop }),
     );
     assert.match(html, /AI Recipe Onboarding/);
     assert.match(html, /Import &amp; map this recipe/);
@@ -141,7 +141,7 @@ describe("UI renders without crashing", () => {
 
   it("renders the onboarding interview questions", () => {
     const html = renderToString(
-      createElement(OnboardingFlow, { recipe, token: "t", onCancel: noop, onStartCooking: noop }),
+      createElement(OnboardingFlow, { recipe, onCancel: noop, onStartCooking: noop }),
     );
     assert.match(html, /How many people are eating/);
     assert.match(html, /What meal is this for/);

@@ -9,7 +9,7 @@ const viteEnv = (import.meta as unknown as { env?: Record<string, string | undef
 const BASE = viteEnv.VITE_API_URL ?? "/api";
 const STORAGE_KEY = "chefUniverseAuth";
 
-export type AuthState = { token: string; chef: ChefProfile };
+export type AuthState = { chef: ChefProfile };
 
 export class ApiClientError extends Error {
   status: number;
@@ -23,27 +23,25 @@ export class ApiClientError extends Error {
 }
 
 export function loadAuth(): AuthState | null {
+  // One-time migration: destroy bearer tokens left by older releases. The
+  // HttpOnly session cookie is restored asynchronously through /me.
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<AuthState>;
-    if (!parsed.token || !parsed.chef) return null;
-    return { token: parsed.token, chef: parsed.chef as ChefProfile };
+    localStorage.removeItem(STORAGE_KEY);
   } catch {
-    return null;
+    /* storage unavailable */
   }
+  return null;
 }
 
-export function saveAuth(auth: AuthState | null): void {
+export function saveAuth(_auth: AuthState | null): void {
   try {
-    if (auth) localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
-    else localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
   } catch {
     /* storage unavailable */
   }
 }
 
-type RequestOptions = { method?: string; body?: unknown; token?: string | null };
+type RequestOptions = { method?: string; body?: unknown };
 
 /**
  * Identical GETs already on the wire are shared instead of fired twice.
@@ -56,7 +54,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const method = (options.method ?? "GET").toUpperCase();
   if (method !== "GET") return perform<T>(path, { ...options, method });
 
-  const key = `${method} ${path} ${options.token ?? ""}`;
+  const key = `${method} ${path}`;
   const existing = inFlightGets.get(key) as Promise<T> | undefined;
   if (existing) return existing;
 
@@ -74,7 +72,6 @@ async function perform<T>(path: string, options: RequestOptions = {}): Promise<T
       method: options.method ?? "GET",
       headers: {
         ...(options.body ? { "content-type": "application/json" } : {}),
-        ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
@@ -124,41 +121,38 @@ export const api = {
   signIn: (body: { displayName: string; role: string; pin?: string | null }) =>
     request<AuthState>("/chefs/sign-in", { method: "POST", body }),
 
-  signOut: (token: string) => request<{ ok: boolean }>("/chefs/sign-out", { method: "POST", token }),
+  signOut: () => request<{ ok: boolean }>("/chefs/sign-out", { method: "POST" }),
 
-  me: (token: string) => request<{ chef: ChefProfile }>("/me", { token }).then((r) => r.chef),
+  me: () => request<{ chef: ChefProfile }>("/me").then((r) => r.chef),
 
-  search: (token: string, query: string) =>
-    request<SearchResponse>(`/search?q=${encodeURIComponent(query)}`, { token }),
+  search: (query: string) =>
+    request<SearchResponse>(`/search?q=${encodeURIComponent(query)}`),
 
-  listRecipes: (token: string) =>
-    request<{ recipes: RecipeView[] }>("/recipes", { token }).then((r) => r.recipes),
+  listRecipes: () =>
+    request<{ recipes: RecipeView[] }>("/recipes").then((r) => r.recipes),
 
-  getRecipe: (token: string, id: string) =>
-    request<{ recipe: RecipeView }>(`/recipes/${id}`, { token }).then((r) => r.recipe),
+  getRecipe: (id: string) =>
+    request<{ recipe: RecipeView }>(`/recipes/${id}`).then((r) => r.recipe),
 
-  saveRecipe: (token: string, draft: RecipeDraft, notes?: string | null) =>
-    request<{ recipe: RecipeView }>("/recipes", { method: "POST", token, body: { ...draft, notes } }).then(
+  saveRecipe: (draft: RecipeDraft, notes?: string | null) =>
+    request<{ recipe: RecipeView }>("/recipes", { method: "POST", body: { ...draft, notes } }).then(
       (r) => r.recipe,
     ),
 
-  deleteRecipe: (token: string, id: string) =>
-    request<{ ok: boolean }>(`/recipes/${id}`, { method: "DELETE", token }),
+  deleteRecipe: (id: string) =>
+    request<{ ok: boolean }>(`/recipes/${id}`, { method: "DELETE" }),
 
-  claim: (token: string, catalogueId: string) =>
+  claim: (catalogueId: string) =>
     request<{ recipe: RecipeView; alreadyOwned: boolean }>(`/catalogue/${catalogueId}/claim`, {
       method: "POST",
-      token,
     }),
 
   startImport: (
-    token: string,
     inputValue: string,
     options?: { allowAiFallback?: boolean; draftHint?: RecipeDraft | null },
   ) =>
     request<{ job: ImportJobView }>("/imports", {
       method: "POST",
-      token,
       body: {
         inputValue,
         ...(options?.allowAiFallback ? { allowAiFallback: true } : {}),
@@ -167,10 +161,9 @@ export const api = {
     }).then((r) => r.job),
 
   /** 📷 Scan a recipe photo/screenshot with OCR → same AI-onboarding review flow. */
-  ocrImport: (token: string, dataUrl: string, title?: string) =>
+  ocrImport: (dataUrl: string, title?: string) =>
     request<OcrImportResponse>("/imports/ocr", {
       method: "POST",
-      token,
       body: { dataUrl, ...(title?.trim() ? { title: title.trim() } : {}) },
     }),
 
@@ -184,42 +177,38 @@ export const api = {
       `/browser/youtube?q=${encodeURIComponent(queryOrUrl)}`,
     ).then((r) => r.page),
 
-  confirmImport: (token: string, jobId: string, draft?: RecipeDraft) =>
+  confirmImport: (jobId: string, draft?: RecipeDraft) =>
     request<{ recipeId: string; catalogueId: string | null; sharedWithCatalogue: boolean }>(
       `/imports/${jobId}/confirm`,
-      { method: "POST", token, body: draft ? { draft } : {} },
+      { method: "POST", body: draft ? { draft } : {} },
     ),
 
-  onboarding: (token: string, recipeId: string, answers: OnboardingAnswers) =>
+  onboarding: (recipeId: string, answers: OnboardingAnswers) =>
     request<OnboardingResult>(`/recipes/${recipeId}/onboarding`, {
       method: "POST",
-      token,
       body: answers,
     }),
 
-  getShoppingList: (token: string, listId: string) =>
-    request<{ list: ShoppingListView }>(`/shopping-lists/${listId}`, { token }).then((r) => r.list),
+  getShoppingList: (listId: string) =>
+    request<{ list: ShoppingListView }>(`/shopping-lists/${listId}`, {}).then((r) => r.list),
 
-  toggleShoppingItem: (token: string, listId: string, itemId: string, checked: boolean) =>
+  toggleShoppingItem: (listId: string, itemId: string, checked: boolean) =>
     request<{ list: ShoppingListView }>(`/shopping-lists/${listId}/items/${itemId}`, {
       method: "PATCH",
-      token,
       body: { checked },
     }).then((r) => r.list),
 
-  completeShoppingList: (token: string, listId: string) =>
+  completeShoppingList: (listId: string) =>
     request<{ list: ShoppingListView }>(`/shopping-lists/${listId}/complete`, {
       method: "POST",
-      token,
     }).then((r) => r.list),
 
-  cookCompletion: (token: string, recipeTitle: string) =>
+  cookCompletion: (recipeTitle: string) =>
     request<{ awarded: boolean; points: number; pointsPerRecipe: number }>("/me/cook-completion", {
       method: "POST",
-      token,
       body: { recipeTitle },
     }),
 
-  uploadPhoto: (token: string, dataUrl: string) =>
-    request<{ url: string; bytes: number }>("/uploads", { method: "POST", token, body: { dataUrl } }),
+  uploadPhoto: (dataUrl: string) =>
+    request<{ url: string; bytes: number }>("/uploads", { method: "POST", body: { dataUrl } }),
 };

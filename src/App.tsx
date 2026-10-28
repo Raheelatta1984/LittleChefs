@@ -156,6 +156,19 @@ export default function App() {
   }, [recipe, stepIndex]);
 
   useEffect(() => {
+    let active = true;
+    void api.me().then((restoredChef) => {
+      if (!active) return;
+      const restored = { chef: restoredChef };
+      setAuth(restored);
+      setPlayer((current) => ({ ...current, points: Math.max(current.points, restoredChef.points) }));
+    }).catch(() => {
+      // No valid HttpOnly session cookie; the welcome flow remains signed out.
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     try {
       localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player));
     } catch {
@@ -206,7 +219,7 @@ export default function App() {
       setAuth(next);
       setPlayer((p) => ({ ...p, points: Math.max(p.points, next.chef.points) }));
       try {
-        setMyRecipes(await api.listRecipes(next.token));
+        setMyRecipes(await api.listRecipes());
       } catch {
         /* ignore */
       }
@@ -269,8 +282,8 @@ export default function App() {
       return;
     }
     if (action === "open-my-recipes") {
-      void ensureChefAuth((authed) => {
-        void api.listRecipes(authed.token).then(setMyRecipes).catch(() => {});
+      void ensureChefAuth(() => {
+        void api.listRecipes().then(setMyRecipes).catch(() => {});
         navigate("myRecipes");
       });
       return;
@@ -308,7 +321,7 @@ export default function App() {
 
     if (chef && prefill.trim().length > 1) {
       try {
-        const result = await api.search(auth!.token, prefill.trim());
+        const result = await api.search(prefill.trim());
         setSearchResult(result);
         return;
       } catch {
@@ -329,7 +342,7 @@ export default function App() {
     setMyRecipesLoading(true);
     setMyRecipesError(null);
     try {
-      setMyRecipes(await api.listRecipes(auth.token));
+      setMyRecipes(await api.listRecipes());
     } catch (error) {
       setMyRecipesError(
         error instanceof ApiClientError ? error.message : "Could not open your recipe book.",
@@ -347,7 +360,7 @@ export default function App() {
     setNotice(`Welcome back, ${next.chef.roleEmoji} ${next.chef.displayName}! Your private kitchen is open.`);
     window.setTimeout(() => setNotice(null), 5000);
     try {
-      setMyRecipes(await api.listRecipes(next.token));
+      setMyRecipes(await api.listRecipes());
     } catch {
       /* the book loads again when opened */
     }
@@ -361,7 +374,7 @@ export default function App() {
   async function signOut() {
     if (auth) {
       try {
-        await api.signOut(auth.token);
+        await api.signOut();
       } catch {
         /* ignore */
       }
@@ -378,7 +391,7 @@ export default function App() {
   async function openDbRecipe(id: string) {
     if (!auth) return;
     try {
-      const found = await api.getRecipe(auth.token, id);
+      const found = await api.getRecipe(id);
       setDbRecipe(found);
       setSearchResult(null);
       playSuccess();
@@ -392,7 +405,7 @@ export default function App() {
     if (!auth) return;
     setClaimingId(catalogueId);
     try {
-      const { recipe } = await api.claim(auth.token, catalogueId);
+      const { recipe } = await api.claim(catalogueId);
       setSearchResult(null);
       setDbRecipe(recipe);
       playSuccess();
@@ -409,7 +422,7 @@ export default function App() {
     if (!auth || !dbRecipe) return;
     setDeletingRecipe(true);
     try {
-      await api.deleteRecipe(auth.token, dbRecipe.id);
+      await api.deleteRecipe(dbRecipe.id);
       setDbRecipe(null);
       goBack();
       void refreshMyRecipes();
@@ -504,7 +517,7 @@ export default function App() {
 
     if (auth) {
       try {
-        const outcome = await api.cookCompletion(auth.token, recipe.name);
+        const outcome = await api.cookCompletion(recipe.name);
         setPlayer((p) => ({
           ...p,
           points: outcome.points,
@@ -681,8 +694,8 @@ export default function App() {
                 void refreshMyRecipes();
                 navigate("myRecipes");
               } else {
-                void ensureChefAuth((authed) => {
-                  void api.listRecipes(authed.token).then(setMyRecipes).catch(() => {});
+                void ensureChefAuth(() => {
+                  void api.listRecipes().then(setMyRecipes).catch(() => {});
                   navigate("myRecipes");
                 });
               }
@@ -706,7 +719,7 @@ export default function App() {
             onDelete={(entry) => {
               if (!auth) return;
               void api
-                .deleteRecipe(auth.token, entry.id)
+                .deleteRecipe(entry.id)
                 .then(() => refreshMyRecipes())
                 .catch((error: unknown) =>
                   setMyRecipesError(error instanceof ApiClientError ? error.message : "Could not delete."),
@@ -731,7 +744,6 @@ export default function App() {
         {screen === "onboarding" && onboardingRecipe && auth && (
           <OnboardingFlow
             recipe={onboardingRecipe}
-            token={auth.token}
             onCancel={goBack}
             onStartCooking={startCookingFromOnboarding}
           />
@@ -818,7 +830,6 @@ export default function App() {
 
       {showImporter && auth && (
         <RecipeImporter
-          token={auth.token}
           canPublish={chef?.canPublish ?? false}
           initialQuery={importerQuery}
           autoStart={importerAutoStart}

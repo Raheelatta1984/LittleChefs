@@ -1,0 +1,2 @@
+# Exact fixed-string exceptions for .github/workflows/security.yml.
+# Keep empty unless a reviewed, non-credential false positive is unavoidable.

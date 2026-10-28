@@ -65,7 +65,6 @@ function draftFromJob(job: ImportJobView): RecipeDraft {
 }
 
 export function RecipeImporter({
-  token,
   canPublish,
   initialQuery,
   autoStart = false,
@@ -76,7 +75,6 @@ export function RecipeImporter({
   onSavedAndOnboard,
   onOpenBrowser,
 }: {
-  token: string;
   canPublish: boolean;
   initialQuery: string;
   autoStart?: boolean;
@@ -109,7 +107,7 @@ export function RecipeImporter({
     setPhase("loading");
     setError(null);
     try {
-      const result = await api.startImport(token, value, {
+      const result = await api.startImport(value, {
         allowAiFallback,
         draftHint: value === initialQuery.trim() ? draftHint : null,
       });
@@ -150,7 +148,7 @@ export function RecipeImporter({
     setPhase("loading");
     setError(null);
     try {
-      const result = await api.ocrImport(token, scanDataUrl);
+      const result = await api.ocrImport(scanDataUrl);
       setJob(result.job);
       setOcrText(result.ocrText);
       setDraft(draftFromJob(result.job));
@@ -170,8 +168,8 @@ export function RecipeImporter({
     setPhase("saving");
     setError(null);
     try {
-      const result = await api.confirmImport(token, job.id, draft);
-      const recipe = await api.getRecipe(token, result.recipeId);
+      const result = await api.confirmImport(job.id, draft);
+      const recipe = await api.getRecipe(result.recipeId);
       playSuccess();
       if (startOnboarding && onSavedAndOnboard) {
         onSavedAndOnboard(recipe);

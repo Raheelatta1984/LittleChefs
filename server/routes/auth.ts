@@ -4,12 +4,22 @@ import { ApiError } from "../lib/errors.js";
 import { createChefSchema, parseBody, signInSchema } from "../lib/schemas.js";
 import { rateLimit } from "../lib/rateLimit.js";
 import {
-  CHEF_SELECT, createSession, forgetSession, hashPin, hashToken, listRoles, toProfile, verifyPin,
-  type ChefRow,
+  CHEF_SELECT, SESSION_COOKIE_NAME, clearSessionCookie, createSession, forgetSession, hashPin, hashToken,
+  listRoles, sessionCookieOptions, toProfile, verifyPin, type ChefRow,
 } from "../lib/auth.js";
 import { requireChef } from "../lib/auth.js";
 
 const POINTS_PER_RECIPE = 50;
+
+function issueSession(res: import("express").Response, req: import("express").Request, session: { token: string; expiresAt: string }, chef: ReturnType<typeof toProfile>, status = 200): void {
+  if (req.header("x-auth-transport")?.toLowerCase() === "bearer") {
+    res.status(status).json({ chef, token: session.token, expiresAt: session.expiresAt });
+    return;
+  }
+  res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions());
+  res.setHeader("cache-control", "no-store");
+  res.status(status).json({ chef, expiresAt: session.expiresAt });
+}
 
 export function authRoutes(db: Database): Router {
   const router = Router();
@@ -47,7 +57,7 @@ export function authRoutes(db: Database): Router {
       const session = await createSession(db, chefId);
       const row = await db.query<ChefRow>(`${CHEF_SELECT} where c.id = $1`, [chefId]);
 
-      res.status(201).json({ chef: toProfile(row.rows[0]), token: session.token, expiresAt: session.expiresAt });
+      issueSession(res, req, session, toProfile(row.rows[0]), 201);
     } catch (error) {
       next(error);
     }
@@ -86,7 +96,7 @@ export function authRoutes(db: Database): Router {
       }
 
       const session = await createSession(db, match.id);
-      res.json({ chef: toProfile(match), token: session.token, expiresAt: session.expiresAt });
+      issueSession(res, req, session, toProfile(match));
     } catch (error) {
       next(error);
     }
@@ -94,12 +104,13 @@ export function authRoutes(db: Database): Router {
 
   router.post("/chefs/sign-out", async (req, res, next) => {
     try {
-      const header = req.header("authorization") ?? "";
-      const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+      const token = req.token ?? "";
       if (token) {
         await db.query(`delete from chef_sessions where token_hash = $1`, [hashToken(token)]);
         forgetSession(token);
       }
+      clearSessionCookie(res);
+      res.setHeader("cache-control", "no-store");
       res.json({ ok: true });
     } catch (error) {
       next(error);
