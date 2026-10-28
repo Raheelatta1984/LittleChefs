@@ -141,7 +141,24 @@ before(async () => {
   upstreamOrigin = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
 
   db = await freshDatabase();
-  appServer = await startTestServer(db);
+  appServer = await startTestServer(db, {
+    fetchImpl: async (input, init) => {
+      const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
+      if (url.startsWith("https://www.youtube.com/oembed?")) {
+        return new Response(JSON.stringify({ title: "Sindhi Chicken Biryani", author_name: "Food Fusion" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "https://www.youtube.com/watch?v=AbCdEfGh123") {
+        return new Response(
+          '<meta name="title" content="Sindhi Chicken Biryani"><meta name="description" content="Ingredients:\n2 cups rice\nMethod:\nCook rice.">',
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return fetch(input, init);
+    },
+  });
   const created = await api<{ token: string; chef: ChefProfile }>(appServer.base, "/chefs", {
     method: "POST",
     body: { displayName: "Zara", role: "adult", avatar: "girl2" },

@@ -152,6 +152,16 @@ export function importRoutes(db: Database, deps: ImportRouteDeps = {}): Router {
                       allowAiFallback: body.allowAiFallback,
                     },
                   );
+
+            // Some upstreams return a technically valid but content-empty
+            // response instead of throwing. Treat that as an import failure so
+            // allowAiFallback consistently produces an editable starter draft.
+            if (
+              body.allowAiFallback &&
+              (outcome.draft.ingredients.length < 2 || outcome.draft.steps.length < 1)
+            ) {
+              throw ApiError.badRequest("The selected source did not include a complete written recipe.");
+            }
           } catch (primaryError) {
             if (!body.allowAiFallback) throw primaryError;
 

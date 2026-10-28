@@ -26,9 +26,12 @@ export async function createChef(
   return { id, token: session.token, name, role };
 }
 
-export async function startTestServer(db: Database): Promise<{ base: string; close: () => Promise<void> }> {
+export async function startTestServer(
+  db: Database,
+  deps: import("../server/app.js").AppDeps = {},
+): Promise<{ base: string; close: () => Promise<void> }> {
   const { createApp } = await import("../server/app.js");
-  const app = createApp(db);
+  const app = createApp(db, deps);
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, "127.0.0.1", () => resolve(s));
   });
