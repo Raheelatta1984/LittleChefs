@@ -44,12 +44,17 @@ jobs:
         if: failure()
         shell: bash
         run: |
+          details=$(grep -n -B 5 -A 40 'not ok' test-output.log || tail -n 160 test-output.log)
           {
             echo '## Test failure output'
             echo '```text'
-            tail -n 160 test-output.log
+            printf '%s\n' "$details"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          details=${details//'%'/'%25'}
+          details=${details//$'\r'/'%0D'}
+          details=${details//$'\n'/'%0A'}
+          echo "::error title=Test failure details::$details"
       - name: Build
         run: npm run build
       - name: Audit dependencies
