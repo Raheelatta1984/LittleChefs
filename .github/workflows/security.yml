@@ -34,7 +34,9 @@ jobs:
       - name: Type-check
         run: npm run typecheck
       - name: Test
-        run: npm test
+        # PGlite/WASM test databases are memory-heavy; serialize test files on
+        # shared CI runners while preserving the complete suite.
+        run: npm run test:ci
       - name: Build
         run: npm run build
       - name: Audit dependencies

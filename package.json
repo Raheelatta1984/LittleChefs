@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "node --import tsx --test tests/*.test.ts",
+    "test:ci": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "db:migrate": "tsx server/scripts/migrate.ts",
     "db:seed": "tsx server/scripts/seed.ts",
     "db:reset": "rm -rf server/.data/pglite && npm run db:migrate && npm run db:seed"
