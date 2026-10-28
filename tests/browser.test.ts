@@ -165,6 +165,13 @@ describe("in-app browser HTML sanitization & link extraction", () => {
     assert.match(clean, /chef-browser:navigate/);
   });
 
+  it("escapes hostile preview-base attributes instead of creating executable markup", () => {
+    const clean = sanitizeHtmlForPreview("<html><head></head><body>safe</body></html>", 'https://chef.example/\"><script>alert(1)</script>?x=\'&y=<img src=x onerror=alert(1)>');
+    assert.doesNotMatch(clean, /<base[^>]*><script>alert\(1\)/i);
+    assert.match(clean, /&quot;&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.match(clean, /&amp;y=&lt;img src=x onerror=alert\(1\)&gt;/);
+  });
+
   it("extracts recipe cards with resolved links and thumbnails while skipping login/social noise", () => {
     const cards = extractRecipeLinks(CHEF_SEARCH_HTML, "https://chef.example/?s=biryani");
     assert.equal(cards.length, 2);

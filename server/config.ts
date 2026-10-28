@@ -38,6 +38,8 @@ export const config = {
   },
   auth: {
     sessionDays: num(process.env.SESSION_TTL_DAYS, 30),
+    /** Canonical browser origin used for cookie-authenticated CSRF checks. */
+    appOrigin: process.env.APP_ORIGIN?.trim().replace(/\/$/, "") || "",
   },
   /**
    * In-process caches that keep hot reads (sessions, internal lookups, the

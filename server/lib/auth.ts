@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import type { NextFunction, Request, Response } from "express";
+import type { CookieOptions, NextFunction, Request, Response } from "express";
 import type { Database, Queryable } from "../db/index.js";
 import type { ChefProfile, RoleId, Role } from "../../shared/types.js";
 import { ApiError } from "./errors.js";
@@ -10,6 +10,37 @@ import { TtlCache, cachedLoad } from "./cache.js";
 const scrypt = promisify(scryptCb);
 
 const PIN_PATTERN = /^\d{4}$/;
+
+export const SESSION_COOKIE_NAME = config.env === "production" ? "__Host-session" : "session";
+
+export function sessionCookieOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    secure: config.env === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: config.auth.sessionDays * 86_400_000,
+  };
+}
+
+export function clearSessionCookie(res: Response): void {
+  const { maxAge: _maxAge, ...options } = sessionCookieOptions();
+  res.clearCookie(SESSION_COOKIE_NAME, options);
+}
+
+function cookieValue(req: Request, name: string): string {
+  const header = req.header("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
 
 export async function hashPin(pin: string): Promise<string> {
   if (!PIN_PATTERN.test(pin)) {
@@ -160,6 +191,7 @@ declare global {
       chef?: ChefProfile;
       db?: Database;
       token?: string;
+      authTransport?: "bearer" | "cookie";
     }
   }
 }
@@ -171,17 +203,20 @@ export function attachDb(db: Database) {
   };
 }
 
-/** Populates req.chef when a valid bearer token is present. */
+/** Populates req.chef from an explicit bearer token or the browser's HttpOnly cookie. */
 export function optionalChef(db: Database) {
   return async (req: Request, _res: Response, next: NextFunction) => {
     try {
       const header = req.header("authorization") ?? "";
-      const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+      const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+      const cookie = cookieValue(req, SESSION_COOKIE_NAME);
+      const token = bearer || cookie;
       if (token) {
         const row = await findChefByToken(db, token);
         if (row) {
           req.chef = toProfile(row);
           req.token = token;
+          req.authTransport = bearer ? "bearer" : "cookie";
           req.db = db;
         }
       }

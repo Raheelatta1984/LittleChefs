@@ -19,31 +19,70 @@ import type { ImportRouteDeps } from "./routes/import.js";
 /** Injectable externals (network + OCR) — production uses the real ones. */
 export type AppDeps = ImportRouteDeps;
 
+const CSP_ENFORCED = "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data: blob: https://images.pexels.com https://i.ytimg.com",
+  "font-src 'self'",
+  "connect-src 'self' https://www.themealdb.com",
+  "frame-src https://www.youtube-nocookie.com",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function requestOrigin(req: Request): string {
+  return config.auth.appOrigin || `${req.protocol}://${req.get("host") ?? ""}`;
+}
+
+function sourceOrigin(value: string | undefined): string {
+  if (!value) return "";
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+}
+
 export function createApp(db: Database, deps: AppDeps = {}): express.Express {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
 
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("content-security-policy", CSP_ENFORCED);
+    res.setHeader("content-security-policy-report-only", CSP_REPORT_ONLY);
+    res.setHeader("x-content-type-options", "nosniff");
+    res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+    res.setHeader("x-frame-options", "DENY");
+    res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    if (config.env === "production" && req.secure) {
+      res.setHeader("strict-transport-security", "max-age=31536000; includeSubDomains");
+    }
+    next();
+  });
+
   app.use(express.json({ limit: "8mb" }));
 
-  // The built app is a single static file; allow any origin for the API so the
-  // Vite dev/preview host, Vercel preview and local file all work. Tighten with
-  // CORS_ORIGINS in production if you want a strict allow-list.
+  // Same-origin browser calls need no CORS. Cross-origin access is opt-in and
+  // exact-match only; an empty allowlist deliberately emits no CORS headers.
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.header("origin");
-    const allowed =
-      config.cors.origins.length === 0 || (origin && config.cors.origins.includes(origin));
-    if (allowed && origin) {
+    if (origin && config.cors.origins.includes(origin)) {
       res.setHeader("access-control-allow-origin", origin);
       res.setHeader("vary", "origin");
       res.setHeader("access-control-allow-credentials", "true");
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      res.setHeader("access-control-expose-headers", "retry-after, ratelimit-limit, ratelimit-remaining, ratelimit-reset");
     }
-    res.setHeader("access-control-allow-headers", "content-type, authorization");
-    res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    // Let the browser read the limiter's advice on cross-origin responses.
-    res.setHeader("access-control-expose-headers", "retry-after, ratelimit-limit, ratelimit-remaining, ratelimit-reset");
     if (req.method === "OPTIONS") {
-      res.sendStatus(204);
+      res.sendStatus(origin && config.cors.origins.includes(origin) ? 204 : 403);
       return;
     }
     next();
@@ -67,6 +106,21 @@ export function createApp(db: Database, deps: AppDeps = {}): express.Express {
   // Authenticate first so the limiter can key signed-in chefs by identity
   // (several kids behind one home router should not share a single bucket).
   app.use("/api", chef);
+  app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+    if (req.chef) res.setHeader("cache-control", "no-store");
+    if (req.authTransport !== "cookie" || !UNSAFE_METHODS.has(req.method)) {
+      next();
+      return;
+    }
+
+    const supplied = sourceOrigin(req.header("origin") ?? req.header("referer"));
+    const allowed = new Set([requestOrigin(req), ...config.cors.origins]);
+    if (!supplied || !allowed.has(supplied)) {
+      res.status(403).json({ error: "csrf_rejected", message: "Request origin is not allowed." });
+      return;
+    }
+    next();
+  });
   app.use("/api", globalRateLimit());
   app.use("/api", authRoutes(db));
   app.use("/api", catalogueRoutes(db));
@@ -87,6 +141,9 @@ export function createApp(db: Database, deps: AppDeps = {}): express.Express {
   const dist = resolve(process.cwd(), "dist");
   if (existsSync(dist)) {
     app.use(express.static(dist));
+    app.get(["/docs", "/swagger", "/swagger-ui", "/graphql", "/redoc", "/__debug__"], (_req, res) => {
+      res.status(404).json({ error: "not_found", message: "Not found." });
+    });
     app.get(/^\/(?!api|uploads).*/, (_req, res) => {
       res.sendFile(resolve(dist, "index.html"));
     });

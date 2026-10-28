@@ -19,12 +19,10 @@ const PORTIONS = [1, 2, 3, 4, 6, 8];
 
 export function OnboardingFlow({
   recipe,
-  token,
   onCancel,
   onStartCooking,
 }: {
   recipe: RecipeView;
-  token: string;
   onCancel: () => void;
   onStartCooking: (result: OnboardingResult) => void;
 }) {
@@ -67,7 +65,7 @@ export function OnboardingFlow({
     setBusy(true);
     setError(null);
     try {
-      const outcome = await api.onboarding(token, recipe.id, {
+      const outcome = await api.onboarding(recipe.id, {
         servings,
         mealOccasion: meal,
         dietary,
@@ -92,7 +90,7 @@ export function OnboardingFlow({
       items: list.items.map((item) => (item.id === itemId ? { ...item, checked } : item)),
     });
     try {
-      const updated = await api.toggleShoppingItem(token, list.id, itemId, checked);
+      const updated = await api.toggleShoppingItem(list.id, itemId, checked);
       setList(updated);
     } catch {
       /* keep the optimistic tick — it will resync next time */

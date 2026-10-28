@@ -41,7 +41,7 @@ and an **onboarding interview** scales every ingredient to the number of people 
 - Each chef has their own book. A chef can open, edit, cook and delete **only their own** recipes —
   enforced in the database (`FORCE ROW LEVEL SECURITY`), not just hidden in the UI.
 - No cross-recipe browsing: search, list, read, update and delete are all scoped to the signed-in chef.
-- Optional 4-digit PIN (scrypt-hashed), bearer tokens stored only as hashes.
+- Optional 4-digit PIN (scrypt-hashed). Browser sessions use an HttpOnly, SameSite cookie; opaque session values are stored only as hashes server-side. Explicit non-browser clients can request bearer transport.
 
 ### 🔎 Internal-first lookup — reuse without leaking
 When anyone searches a dish:
@@ -57,8 +57,8 @@ So the same dish is never imported twice, yet no chef can see another chef's boo
 Every tap used to mean a round-trip to Postgres. The API now sheds load before it ever reaches the
 database, and degrades gracefully when someone (or a buggy client) hammers it:
 
-* **Session cache + negative cache** — a validated bearer token reuses its chef profile for 30 s;
-  made-up or expired tokens are cached as "no" for 10 s, so a flood of junk credentials costs *zero*
+* **Session cache + negative cache** — a validated cookie or bearer session reuses its chef profile for 30 s;
+  made-up or expired values are cached as "no" for 10 s, so a flood of junk credentials costs *zero*
   queries. Sign-out, profile edits and point awards invalidate immediately.
 * **Bloom filter over the shared catalogue** — an in-memory index of every catalogue title, its
   dedupe key and its tokens. When a dish cannot possibly be in the catalogue ("moonbeam comet pie")

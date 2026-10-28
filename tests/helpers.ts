@@ -47,6 +47,7 @@ export async function api<T = unknown>(
   const response = await fetch(`${base}${path}`, {
     method: options.method ?? "GET",
     headers: {
+      "x-auth-transport": "bearer",
       ...(options.body ? { "content-type": "application/json" } : {}),
       ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
     },
