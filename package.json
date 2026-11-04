@@ -19,7 +19,7 @@
     "db:reset": "rm -rf server/.data/pglite && npm run db:migrate && npm run db:seed"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite": "^0.5.14",
     "@tesseract.js-data/eng": "^1.0.0",
     "clsx": "2.1.1",
     "dotenv": "^18.0.9",
